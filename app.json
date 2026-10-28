@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "SecureBank",
+    "slug": "securebank",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "securebank",
+    "platforms": ["ios", "android", "web"],
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0A192F"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.securebank.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Aparat jest wymagany do skanowania kodów QR z danymi przelewu.",
+        "NSFaceIDUsageDescription": "Biometria Face ID jest wymagana do bezpiecznego logowania i autoryzacji przelewów."
+      }
+    },
+    "android": {
+      "package": "com.securebank.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0A192F"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Biometria jest wymagana do autoryzacji operacji w SecureBank."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}
