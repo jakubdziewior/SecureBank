@@ -96,3 +96,140 @@ WITH CHECK (auth.uid() IS NOT NULL);
 CREATE POLICY "audit_logs_select_admin" 
 ON public.audit_logs FOR SELECT 
 USING (public.is_admin());
+
+CREATE OR REPLACE FUNCTION public.mfa_satisfied()
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN COALESCE(auth.jwt()->>'aal', 'aal1') = 'aal2' OR NOT EXISTS (
+        SELECT 1 FROM auth.mfa_factors
+        WHERE user_id = auth.uid() AND status = 'verified'
+    );
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '';
+
+CREATE POLICY "profiles_require_mfa"
+ON public.profiles AS RESTRICTIVE FOR ALL TO authenticated
+USING (public.mfa_satisfied())
+WITH CHECK (public.mfa_satisfied());
+
+CREATE POLICY "accounts_require_mfa"
+ON public.accounts AS RESTRICTIVE FOR ALL TO authenticated
+USING (public.mfa_satisfied())
+WITH CHECK (public.mfa_satisfied());
+
+CREATE POLICY "transactions_require_mfa"
+ON public.transactions AS RESTRICTIVE FOR ALL TO authenticated
+USING (public.mfa_satisfied())
+WITH CHECK (public.mfa_satisfied());
+
+CREATE POLICY "audit_logs_require_mfa"
+ON public.audit_logs AS RESTRICTIVE FOR ALL TO authenticated
+USING (public.mfa_satisfied())
+WITH CHECK (public.mfa_satisfied());
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+CREATE TABLE IF NOT EXISTS public.user_pins (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    pin_hash TEXT NOT NULL,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    version INT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.user_pins ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.user_pins FROM anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.recent_password_login(max_age_seconds INT DEFAULT 900)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM jsonb_array_elements(COALESCE(auth.jwt()->'amr', '[]'::jsonb)) AS a
+        WHERE a->>'method' = 'password'
+          AND (a->>'timestamp')::BIGINT > EXTRACT(EPOCH FROM now()) - max_age_seconds
+    );
+END;
+$$ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '';
+
+CREATE OR REPLACE FUNCTION public.pin_status()
+RETURNS JSONB AS $$
+DECLARE
+    pin_row public.user_pins;
+BEGIN
+    IF auth.uid() IS NULL OR NOT public.mfa_satisfied() THEN
+        RAISE EXCEPTION 'not_authorized';
+    END IF;
+    SELECT * INTO pin_row FROM public.user_pins WHERE user_id = auth.uid();
+    RETURN jsonb_build_object('has_pin', pin_row.user_id IS NOT NULL, 'version', pin_row.version);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+CREATE OR REPLACE FUNCTION public.verify_pin(pin TEXT)
+RETURNS JSONB AS $$
+DECLARE
+    pin_row public.user_pins;
+BEGIN
+    IF auth.uid() IS NULL OR NOT public.mfa_satisfied() THEN
+        RAISE EXCEPTION 'not_authorized';
+    END IF;
+    SELECT * INTO pin_row FROM public.user_pins WHERE user_id = auth.uid() FOR UPDATE;
+    IF pin_row.user_id IS NULL THEN
+        RETURN jsonb_build_object('valid', false, 'attempts_left', 0, 'reset', true);
+    END IF;
+    IF pin_row.pin_hash = extensions.crypt(pin, pin_row.pin_hash) THEN
+        UPDATE public.user_pins SET failed_attempts = 0 WHERE user_id = auth.uid();
+        RETURN jsonb_build_object('valid', true, 'version', pin_row.version);
+    END IF;
+    IF pin_row.failed_attempts + 1 >= 5 THEN
+        DELETE FROM public.user_pins WHERE user_id = auth.uid();
+        RETURN jsonb_build_object('valid', false, 'attempts_left', 0, 'reset', true);
+    END IF;
+    UPDATE public.user_pins SET failed_attempts = failed_attempts + 1 WHERE user_id = auth.uid();
+    RETURN jsonb_build_object('valid', false, 'attempts_left', 5 - (pin_row.failed_attempts + 1), 'reset', false);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+CREATE OR REPLACE FUNCTION public.set_pin(new_pin TEXT, current_pin TEXT DEFAULT NULL)
+RETURNS JSONB AS $$
+DECLARE
+    pin_row public.user_pins;
+    check_result JSONB;
+BEGIN
+    IF auth.uid() IS NULL OR NOT public.mfa_satisfied() THEN
+        RAISE EXCEPTION 'not_authorized';
+    END IF;
+    IF new_pin !~ '^\d{6}$' THEN
+        RAISE EXCEPTION 'invalid_pin_format';
+    END IF;
+
+    SELECT * INTO pin_row FROM public.user_pins WHERE user_id = auth.uid();
+
+    IF current_pin IS NOT NULL AND pin_row.user_id IS NOT NULL THEN
+        check_result := public.verify_pin(current_pin);
+        IF NOT (check_result->>'valid')::BOOLEAN THEN
+            RETURN check_result;
+        END IF;
+    ELSIF NOT public.recent_password_login() THEN
+        RAISE EXCEPTION 'recent_login_required';
+    END IF;
+
+    INSERT INTO public.user_pins (user_id, pin_hash, failed_attempts, version, updated_at)
+    VALUES (auth.uid(), extensions.crypt(new_pin, extensions.gen_salt('bf', 10)), 0, 1, now())
+    ON CONFLICT (user_id) DO UPDATE
+    SET pin_hash = EXCLUDED.pin_hash,
+        failed_attempts = 0,
+        version = public.user_pins.version + 1,
+        updated_at = now();
+
+    SELECT * INTO pin_row FROM public.user_pins WHERE user_id = auth.uid();
+    RETURN jsonb_build_object('valid', true, 'version', pin_row.version);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.pin_status() FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.verify_pin(TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.set_pin(TEXT, TEXT) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.recent_password_login(INT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.pin_status() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.verify_pin(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.set_pin(TEXT, TEXT) TO authenticated;

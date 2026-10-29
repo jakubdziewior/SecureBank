@@ -13,13 +13,15 @@ import { supabase } from '../services/supabase';
 import { BankAccount, Transaction, UserProfile } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { SecuritySection } from '../components/SecuritySection';
 
 interface HomeScreenProps {
   session: any;
   onLogout: () => void;
+  onPinLocked: () => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPinLocked }) => {
   const { theme, isDark } = useTheme();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -150,12 +152,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout }) => 
     });
   };
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     onLogout();
-    try {
-      await supabase.auth.signOut();
-    } catch {
-    }
   };
 
   const handleTransferModal = () => {
@@ -351,6 +349,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout }) => 
             </View>
           </TouchableOpacity>
         </View>
+
+        <SecuritySection userEmail={userEmail} onPinLocked={onPinLocked} />
 
         <View
           style={[

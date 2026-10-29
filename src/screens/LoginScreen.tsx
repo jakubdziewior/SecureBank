@@ -220,13 +220,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleBiometricAuth = () => {
-    showFeedback(
-      'info',
-      'Autoryzacja biometryczna zostanie aktywowana po pierwszym pomyślnym logowaniu.'
-    );
-  };
-
   const pillShift = trackWidth > 0 ? (trackWidth - 6) / 2 : 140;
   const pillTranslateX = tabAnim.interpolate({
     inputRange: [0, 1],
@@ -502,24 +495,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                   </Text>
                 )}
               </TouchableOpacity>
-
-              {!isRegistering && (
-                <TouchableOpacity
-                  style={[
-                    styles.secondaryButton,
-                    {
-                      borderColor: theme.cardBorder,
-                      backgroundColor: theme.cardSecondary,
-                    },
-                  ]}
-                  onPress={handleBiometricAuth}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: theme.textSecondary }]}>
-                    Zaloguj za pomocą biometrii
-                  </Text>
-                </TouchableOpacity>
-              )}
             </Animated.View>
           </Animated.View>
 
@@ -683,8 +658,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 15,
-    paddingVertical: 12,
+    paddingVertical: 0,
+    height: 48,
     fontSize: 15,
+    letterSpacing: 0,
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   primaryButton: {
     borderRadius: 12,
@@ -703,17 +682,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
-  },
-  secondaryButton: {
-    marginTop: 10,
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   footer: {
     marginTop: 32,
