@@ -6,7 +6,7 @@
 
 ---
 
-## Karta Projektu (Zaktualizowana – Sekcja 2-osobowa)
+## Karta Projektu
 
 ### Informacje o sekcji
 | Pole | Wartość |
