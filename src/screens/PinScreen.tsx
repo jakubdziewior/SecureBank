@@ -75,7 +75,7 @@ export const PinScreen: React.FC<PinScreenProps> = (props) => {
     props.mode !== 'setup' && props.subtitle
       ? props.subtitle
       : props.mode === 'confirm'
-      ? 'Wpisz swój PIN, aby dokończyć logowanie na tym urządzeniu.'
+      ? 'Wpisz swój PIN, aby odblokować aplikację na tym urządzeniu.'
       : props.mode === 'unlock'
       ? props.email
         ? `Konto: ${props.email}`

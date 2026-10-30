@@ -43,6 +43,7 @@ const MainNavigator = () => {
   const gateRef = useRef<Gate>('loading');
   const refreshIdRef = useRef(0);
   const pinResetRequestedRef = useRef(false);
+  const passwordLoginRef = useRef(false);
   const backgroundedAtRef = useRef<number | null>(null);
 
   const applyGate = (nextGate: Gate, nextSession: any) => {
@@ -84,6 +85,10 @@ const MainNavigator = () => {
     const storedSessionLocked = !!info && !unlocked && (await hasEncryptedStoredSession());
     const currentSession = storedSessionLocked ? null : (await supabase.auth.getSession()).data.session;
 
+    if (gateRef.current === 'login' && currentSession?.user) {
+      passwordLoginRef.current = true;
+    }
+
     let nextGate: Gate;
     let changedElsewhere = false;
     if (storedSessionLocked) {
@@ -96,6 +101,7 @@ const MainNavigator = () => {
       nextGate = 'home';
     } else {
       const localVaultMatches = unlocked && info?.userId === currentSession.user.id;
+      const skipPinConfirm = passwordLoginRef.current && !unlocked;
       let status: { hasPin: boolean; version: number | null } | null = null;
       try {
         status = await getAccountPinStatus();
@@ -104,10 +110,10 @@ const MainNavigator = () => {
       }
 
       if (!status) {
-        nextGate = localVaultMatches ? 'home' : 'pinConfirm';
+        nextGate = localVaultMatches || skipPinConfirm ? 'home' : 'pinConfirm';
       } else if (!status.hasPin || pinResetRequestedRef.current) {
         nextGate = 'pinSetup';
-      } else if (localVaultMatches && info?.pinVersion === status.version) {
+      } else if ((localVaultMatches && info?.pinVersion === status.version) || skipPinConfirm) {
         nextGate = 'home';
       } else {
         nextGate = 'pinConfirm';
@@ -136,9 +142,12 @@ const MainNavigator = () => {
   }, []);
 
   const lockApp = async () => {
-    await supabase.auth.stopAutoRefresh();
-    lockSession();
-    discardPendingSession();
+    passwordLoginRef.current = false;
+    if (isSessionUnlocked()) {
+      await supabase.auth.stopAutoRefresh();
+      lockSession();
+      discardPendingSession();
+    }
     await refreshGate();
   };
 
@@ -153,7 +162,7 @@ const MainNavigator = () => {
       }
       const elapsed = Date.now() - backgroundedAtRef.current;
       backgroundedAtRef.current = null;
-      if (elapsed >= LOCK_AFTER_BACKGROUND_MS && gateRef.current === 'home' && isSessionUnlocked()) {
+      if (elapsed >= LOCK_AFTER_BACKGROUND_MS && gateRef.current === 'home' && PIN_SUPPORTED) {
         await lockApp();
       }
     };
@@ -172,17 +181,14 @@ const MainNavigator = () => {
     await clearStoredSession();
     lockSession();
     pinResetRequestedRef.current = false;
+    passwordLoginRef.current = false;
     await refreshGate();
   };
 
   const handleForgotPin = async () => {
-    if (gateRef.current === 'pinConfirm') {
-      pinResetRequestedRef.current = true;
-      await refreshGate();
-      return;
-    }
     await deletePinVault();
     await handleFullLogout();
+    pinResetRequestedRef.current = true;
   };
 
   const storeLocalPin = async (pin: string, pinVersion: number) => {
@@ -198,7 +204,7 @@ const MainNavigator = () => {
   };
 
   const handleLogout = async () => {
-    if (PIN_SUPPORTED && isSessionUnlocked()) {
+    if (PIN_SUPPORTED) {
       await lockApp();
       return;
     }
@@ -228,7 +234,7 @@ const MainNavigator = () => {
       return { success: true };
     }
     if (result.reset) {
-      await refreshGate();
+      await handleForgotPin();
     }
     return { success: false, wiped: result.reset, attemptsLeft: result.attemptsLeft, message: result.message };
   };
@@ -240,7 +246,7 @@ const MainNavigator = () => {
       await supabase.auth.startAutoRefresh();
       await refreshGate();
     } else if (result.wiped) {
-      await handleFullLogout();
+      await handleForgotPin();
     }
     return result;
   };

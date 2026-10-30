@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
 import { PinPad } from './PinPad';
-import { PIN_LENGTH, rewrapPin } from '../services/pin';
+import { PIN_LENGTH, isSessionUnlocked, rewrapPin } from '../services/pin';
 import { setAccountPin } from '../services/accountPin';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -76,7 +76,9 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
     try {
       const result = await setAccountPin(newPin, currentPin);
       if (result.valid) {
-        await rewrapPin(newPin, result.version);
+        if (isSessionUnlocked()) {
+          await rewrapPin(newPin, result.version);
+        }
         onChanged();
         return;
       }
