@@ -5,7 +5,7 @@
 | Pole | Wartość |
 | :--- | :--- |
 | **Sekcja / aplikacja** | SecureBank |
-| **Technologia** | React Native (TypeScript) |
+| **Technologia** | React Native (Expo / TypeScript) |
 | **Zajęcia nr** | 2 |
 | **Temat zajęć** | Modelowanie zagrożeń i architektura |
 | **Obszar MASVS** | MASVS-AUTH, MASVS-STORAGE, MASVS-NETWORK, MASVS-PLATFORM |

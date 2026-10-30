@@ -25,7 +25,11 @@
       },
       "permissions": [
         "android.permission.CAMERA"
-      ]
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_PHONE_STATE"
+      ],
+      "allowBackup": false
     },
     "plugins": [
       [

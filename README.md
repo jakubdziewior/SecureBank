@@ -12,7 +12,7 @@
 | Pole | Wartość |
 | :--- | :--- |
 | **Nazwa sekcji / aplikacji** | **SecureBank** |
-| **Technologia** | **React Native (TypeScript)** |
+| **Technologia** | **React Native (Expo / TypeScript)** |
 | **Skład sekcji (2 osoby)** | **Jakub Dziewior**, **Jakub Wodyk** |
 | **Link do repozytorium** | [https://github.com/jakubdziewior/SecureBank](https://github.com/jakubdziewior/SecureBank) |
 | **Backend** | **Supabase (PostgreSQL + RLS + GoTrue Auth)** |
