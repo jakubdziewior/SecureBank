@@ -24,25 +24,59 @@
 
 ---
 
-## 1. Gdzie to zagrożenie występuje u nas?
+## 1. Gdzie to zagrożenie występuje u nas? (Tabela uprawnień)
 
-| Zasób / Mechanizm platformy | Po co jest potrzebne | Kiedy aplikacja o nie prosi | Co się dzieje przy odmowie (wariant awaryjny) | Zastąpienie pickerem / ograniczeniem |
-| :--- | :--- | :--- | :--- | :--- |
-| **Aparat (`CAMERA` / `NSCameraUsageDescription`)** | Skanowanie kodów QR przelewów (automatyczne uzupełnienie numeru rachunku i kwoty). | W chwili kliknięcia przycisku „Skanuj kod QR” w formularzu przelewu (zasada *in-time*, nigdy przy starcie aplikacji). | Aplikacja nie blokuje działania; wyświetla komunikat informacyjny i przełącza użytkownika na standardowy, ręczny formularz wprowadzania danych przelewu. | Brak (aparat wymaga bezpośredniego strumienia wideo do dekodowania QR). |
-| **Pliki / Potwierdzenia przelewów (PDF)** | Generowanie i zapisywanie potwierdzeń wykonania transakcji bankowych. | W momencie kliknięcia „Pobierz potwierdzenie PDF” przy szczegółach transakcji. | Brak zapisu pliku; możliwość ponownego pobrania lub podejrzenia potwierdzenia na ekranie. | **Zastąpione pickerem:** Użycie systemowego modułu Storage Access Framework (`expo-sharing` / `UIDocumentPicker`), dzięki czemu aplikacja **nie wymaga** szerokiego uprawnienia `READ/WRITE_EXTERNAL_STORAGE`. |
-| **Ochrona przed ominięciem logowania (Exported Activities)** | Zapobieganie bezpośredniemu uruchomieniu ekranów wewnętrznych banku (`HomeScreen`) z pominięciem logowania (np. przez `adb shell am start` lub inną aplikację). | Cały cykl życia aplikacji. | Próba bezpośredniego wywołania intencji kieruje użytkownika do strażnika sesji (`gate` w `App.tsx`) i wymusza autoryzację PIN/hasłem. | Architektura Single-Activity w React Native/Expo: jedyna aktywność to `MainActivity` z `android:exported="true"` (punkt wejścia), a wszystkie ekrany wewnętrzne są komponentami JS chronionymi stanem nawigatora. |
-| **Kopia zapasowa systemu (`adb backup` / iCloud Backup)** | Zabezpieczenie danych aplikacji przed wyciekiem w wyniku nieautoryzowanego backupu urządzenia. | Podczas podłączenia urządzenia do komputera lub automatycznej kopii zapasowej w chmurze. | System pomija dane sandboxu aplikacji podczas tworzenia kopii zapasowej. | Wyłączenie kopii zapasowej w konfiguracji (`android:allowBackup="false"` w `app.json`). |
+Zgodnie z metodyką modelowania uprawnień platformowych oraz wytycznymi z prezentacji, w aplikacji **SecureBank** przeanalizowano pełen cykl życia uprawnień: **Deklaracja $\rightarrow$ Prośba $\rightarrow$ Decyzja $\rightarrow$ Użycie $\rightarrow$ Cofnięcie**. 
+
+Zgodnie z zasadą minimalnych uprawnień (*Least Privilege*) aplikacja bankowa prosi o dostęp wyłącznie wtedy, gdy funkcja jest rzeczywiście wywoływana przez użytkownika (*zasada in-time*), a każda odmowa jest stanem normalnym, który nie może blokować działania aplikacji.
+
+### Tabela uprawnień systemowych aplikacji
+
+| Uprawnienie (Android / iOS) | Po co jest potrzebne (Cel biznesowy) | Kiedy aplikacja prosi (Moment prośby) | Co się dzieje przy odmowie (Normalny stan / Fallback) | Obsługa stanów odmowy (`denied` / `permanentlyDenied`) | Wariant ograniczony lub zastąpienie pickerem |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Aparat**<br>• Android: `CAMERA`<br>• iOS: `NSCameraUsageDescription` | Skanowanie kodów QR na fakturach i przelewach (automatyczne zaczytanie numeru rachunku, kwoty i tytułu) oraz weryfikacja tożsamości KYC. | Dopiero w chwili naciśnięcia przycisku „Skanuj kod QR” na ekranie nowego przelewu. Nigdy przy starcie aplikacji. | Aplikacja działa dalej; użytkownik zostaje płynnie przełączony na standardowy formularz ręcznego wprowadzania danych przelewu. Ekran nie jest blokowany. | • `denied`: Jednorazowy baner informacyjny z możliwością ponowienia próby.<br>• `permanentlyDenied`: Baner z przyciskiem do Ustawień systemowych (`Linking.openSettings()`). Brak zapętlonych monitów. | **Systemowy Photo Picker:** Użytkownik może zamiast aparatu wybrać wcześniej zapisane zdjęcie kodu QR z galerii przez systemowy selektor (bez konieczności posiadania uprawnienia do aparatu). |
+| **2. Przybliżona lokalizacja**<br>• Android: `ACCESS_COARSE_LOCATION`<br>• iOS: `NSLocationWhenInUseUsageDescription` | Ochrona antyfraudowa (detekcja nieregularnych logowań i operacji z obcych lokalizacji geograficznych wg dyrektywy PSD2) oraz wyszukiwarka placówek i bankomatów. | Wyłącznie po przejściu do zakładki „Znajdź bankomat / wpłatomat” lub w tle autoryzacji niestandardowej transakcji wysokiej kwoty. | Wyszukiwarka bankomatów przełącza się w tryb ręcznego wpisania miasta lub kodu pocztowego. Przy transakcji brak odmowy wykonania przelewu – system prosi o dodatkowy kod 2FA. | • `denied`: Przejście do wyszukiwania tekstowego.<br>• `permanentlyDenied`: Zapamiętanie flagi w pamięci sesji, brak ponownych zapytań systemowych przy kolejnych operacjach. | **Wariant ograniczony:** Aplikacja wnioskuje **wyłącznie o lokalizację przybliżoną** (`COARSE` na Androidzie / *Reduced Accuracy* na iOS). Dokładna lokalizacja (`ACCESS_FINE_LOCATION`) oraz lokalizacja w tle są trwale zablokowane. |
+| **3. Powiadomienia**<br>• Android: `POST_NOTIFICATIONS` (13+)<br>• iOS: `UNUserNotificationCenter` | Otrzymywanie powiadomień autoryzacyjnych push (zatwierdzanie operacji), alertów o podejrzanych próbach logowania oraz natychmiastowych informacji o przelewach przychodzących. | Po pierwszym udanym logowaniu i konfiguracji konta, poprzedzone dedykowanym ekranem informacyjnym (*pre-permission dialog*) wyjaśniającym cel bezpieczeństwa. | Użytkownik nie otrzymuje alertów w tle; powiadomienia o transakcjach są widoczne w historii wewnątrz aplikacji, a autoryzacja operacji odbywa się kodem TOTP lub PIN-em. | • `denied`: Informacja w profilu, że powiadomienia push są nieaktywne.<br>• `permanentlyDenied`: Przełącznik w zakładce „Bezpieczeństwo” odsyłający do ustawień systemowych. | **Powiadomienia tymczasowe / In-App:** Wykorzystanie powiadomień tymczasowych na iOS (*Provisional Notifications*) oraz polling stanu transakcji wewnątrz aktywnej sesji aplikacji bez uprawnień systemowych. |
+| **4. Biometria**<br>• Android: `USE_BIOMETRIC`, `USE_FINGERPRINT`<br>• iOS: `NSFaceIDUsageDescription` | Szybkie odblokowanie aplikacji i autoryzacja przelewów odciskiem palca / Face ID zamiast wpisywania 6-cyfrowego PIN-u. | Opcjonalnie w zakładce „Ustawienia bezpieczeństwa” w chwili, gdy użytkownik decyduje się aktywować biometrię. | Domyślne, w pełni bezpieczne logowanie 6-cyfrowym PIN-em sprzętowym lub hasłem głównym; aplikacja zachowuje 100% funkcjonalności. | • `denied`: Pozostanie przy autoryzacji kodem PIN.<br>• `restricted` (brak modułu biometrii lub blokada rodzicielska): Automatyczne ukrycie opcji w interfejsie. | **Sprzętowy PIN jako fallback:** Biometria stanowi wyłącznie warstwę wygody UX; bazowym mechanizmem kryptograficznym jest skarbiec PIN powiązany z PBKDF2 i AES-256-GCM. |
+| **5. Zdjęcia i pliki**<br>• Android: `READ_MEDIA_IMAGES`<br>• iOS: Dostęp do biblioteki zdjęć | Załączanie potwierdzeń transakcji, dokumentów dochodowych KYC lub pobieranie wyciągów bankowych w formacie PDF. | W momencie kliknięcia „Pobierz wyciąg PDF” lub „Załącz dokument do dyspozycji”. | Brak zapisu/odczytu; możliwość bezpośredniego podglądu wygenerowanego dokumentu w dedykowanym oknie aplikacji. | Brak blokad całego ekranu; odmowa dotyczy tylko bieżącej operacji plikowej. | **Zastąpione w 100% pickerem systemowym:** Wykorzystanie Storage Access Framework (SAF na Androidzie) oraz `UIDocumentPicker` / `expo-sharing` na iOS. Aplikacja **nie deklaruje ani nie potrzebuje** szerokiego uprawnienia `READ_EXTERNAL_STORAGE` do całej pamięci. |
+| **6. Kontakty**<br>• Android: `READ_CONTACTS`<br>• iOS: Kontakty | Realizacja szybkich przelewów na numer telefonu (przelewy P2P / BLIK). | W chwili kliknięcia ikony książki adresowej w polu numeru odbiorcy przelewu telefonicznego. | Użytkownik wpisuje numer telefonu odbiorcy ręcznie z klawiatury numerycznej. | • `denied`: Zamknięcie okna wyboru i powrót do pola tekstowego.<br>• `permanentlyDenied`: Brak ponownych zapytań, pole tekstowe pozostaje aktywne. | **Zastąpione Contact Access Pickerem:** Zastosowanie systemowego selektora kontaktów (*Contact Picker* na Androidzie oraz iOS 18+). Aplikacja otrzymuje wyłącznie dane wybranego kontaktu bez dostępu do całej książki telefonicznej. |
+
+---
+
+### Zestawienie uprawnień: Wnioskowane vs Zastąpione pickerem vs Trwale zablokowane
+
+W architekturze bezpieczeństwa **SecureBank** przyjęto ścisły podział uprawnień:
+
+1. **Uprawnienia wnioskowane w czasie działania (Runtime Permissions):**
+   * `android.permission.CAMERA` / `NSCameraUsageDescription` (skanowanie QR kodów przelewów in-time).
+   * `android.permission.ACCESS_COARSE_LOCATION` / `NSLocationWhenInUseUsageDescription` (moduł antyfraudowy PSD2, wyłącznie przybliżona lokalizacja).
+   * `android.permission.POST_NOTIFICATIONS` (autoryzacja operacji push).
+   * `android.permission.USE_BIOMETRIC` / `NSFaceIDUsageDescription` (opcjonalna biometria z fallbackiem na PIN).
+2. **Zasoby realizowane przez pośrednictwo systemu (Aplikacja NIE potrzebuje uprawnień – Slajd 4):**
+   * *Pliki i wyciągi PDF:* Obsługiwane przez Storage Access Framework (`expo-sharing` / `UIDocumentPicker`) – dostęp tylko do wskazanego pliku.
+   * *Wybór zdjęć:* Android Photo Picker / iOS PHPicker – użytkownik wskazuje plik, aplikacja nie widzi galerii.
+   * *Kontakty do przelewów P2P:* Systemowy picker kontaktu – aplikacja nie odczytuje całej książki adresowej.
+3. **Uprawnienia trwale zablokowane (`blockedPermissions` – Slajd 7):**
+   * `android.permission.READ_PHONE_STATE` – usunięcie z manifestu identyfikatora urządzenia dodawanego przez biblioteki zewnętrzne (`tools:node="remove"`).
+   * `android.permission.ACCESS_FINE_LOCATION` – blokada precyzyjnego śledzenia GPS (wystarcza przybliżona lokalizacja).
+   * `android.permission.READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` – blokada przestarzałych, niebezpiecznych uprawnień do całej pamięci współdzielonej.
 
 ---
 
 ## 2. Co już mamy?
 
-* **Jawna i minimalna deklaracja uprawnień w `app.json`:** Zdefiniowano wyłącznie jedno uprawnienie sprzętowe (`android.permissions: ["android.permission.CAMERA"]`) wraz z precyzyjnym opisem celu dla systemu iOS (`ios.infoPlist.NSCameraUsageDescription`).
-* **Blokada niepożądanych uprawnień bibliotecznych:** Wprowadzono dyrektywę `android.blockedPermissions: ["android.permission.READ_PHONE_STATE"]`, która wymusza usunięcie zbędnych uprawnień wstrzykiwanych automatycznie przez biblioteki zewnętrzne w procesie łączenia manifestów (`Merged Manifest`).
-* **Zablokowanie kopii zapasowej (`allowBackup: false`):** Skonfigurowano `android.allowBackup: false` w `app.json`, co zabezpiecza piaskownicę aplikacji przed wyciągnięciem danych za pomocą `adb backup`.
-* **Wyłączenie zbędnego uprawnienia biometrii:** W pluginie `expo-secure-store` jawnie wyłączono uprawnienie FaceID (`faceIDPermission: false`), opierając autoryzację lokalną na sprzętowo szyfrowanym skarbcu PIN (AES-256-GCM).
-* **Architektura Single-Activity ze strażnikiem stanu (`Gate`):** Wszystkie widoki aplikacji są renderowane warunkowo w `App.tsx` w oparciu o stan sesji (`gate`: `loading` $\rightarrow$ `login` $\rightarrow$ `mfa` $\rightarrow$ `pinUnlock` $\rightarrow$ `home`). Brak wyeksportowanych aktywności natywnych uniemożliwia ominięcie ekranu uwierzytelniania.
-* **Wykrywanie przejścia do tła i auto-blokada:** Aplikacja nasłuchuje zdarzeń `AppState` – jeśli pozostaje w tle dłużej niż 30 sekund, sesja w pamięci RAM zostaje natychmiast wyczyszczona (`lockSession()`), a powrót do aplikacji wymaga ponownego wprowadzenia PIN-u.
+* **Jawna konfiguracja uprawnień i blokad w `app.json`:**
+  * W `android.permissions` zadeklarowano minimalny zestaw uprawnień: aparat (`CAMERA`), zablokowano zbędne uprawnienia telemetryczne (`READ_PHONE_STATE`) dyrektywą `blockedPermissions`.
+  * W `ios.infoPlist` dodano wymagany klucz opisu celu `NSCameraUsageDescription`.
+* **Wyłączenie tworzenia kopii zapasowych (`allowBackup: false`):**
+  * Zgodnie z wytycznymi ze slajdu 10 w `app.json` skonfigurowano `"allowBackup": false`, co zapobiega kradzieży danych skarbca i sesji przez interfejs `adb backup`.
+* **Bezpieczny skarbiec sesji z niezależnym PIN-em:**
+  * W pluginie `expo-secure-store` wyłączono uprawnienie FaceID (`faceIDPermission: false`). Sesja chroniona jest algorytmem AES-256-GCM z kluczem wyprowadzanym z PIN-u (PBKDF2 z 20 000 iteracji SHA-256) oraz dwuetapową weryfikacją TOTP.
+* **Ochrona przed wyeksportowanymi aktywnościami (Single-Activity + Strażnik Sesji):**
+  * Zgodnie z analizą wektora ataku ze slajdu 11 (omijanie logowania przez bezpośrednie wywołanie aktywności intencją `adb shell am start`), aplikacja opiera się na architekturze Single-Activity (`MainActivity`).
+  * Wszystkie ekrany wewnętrzne podlegają ścisłej kontroli strażnika sesji (`gate` w `App.tsx` w stanach: `loading` $\rightarrow$ `login` $\rightarrow$ `mfa` $\rightarrow$ `pinUnlock` $\rightarrow$ `home`). Bez poprawnej autoryzacji żaden komponent wewnętrzny nie zostanie wyrenderowany w pamięci RAM.
+* **Automatyczna blokada w cyklu życia aplikacji:**
+  * Nasłuch zdarzeń systemowych `AppState` – przejście aplikacji w tło na dłużej niż 30 sekund powoduje natychmiastowe usunięcie klucza z pamięci RAM (`lockSession()`) i wymusza ponowną autoryzację przy powrocie.
 
 ---
 
@@ -50,28 +84,30 @@
 
 | Luka / obszar do wdrożenia | Gdzie | Ryzyko | Dlaczego takie ryzyko |
 | :--- | :--- | :---: | :--- |
-| **Brak pełnej obsługi stanów odmowy uprawnienia aparatu w UI** | Moduł skanera QR w ekranie przelewów | **Niskie** | Brak obsługi stanu `permanentlyDenied` (trwała odmowa z zaznaczeniem „Nie pytaj ponownie”) może uniemożliwić użytkownikowi łatwe przejście do ustawień systemowych w celu włączenia uprawnienia. |
-| **Brak weryfikacji scalonego manifestu po prebuildzie** | Narzędzia budowania Androida | **Średnie** | W przypadku dodania nowej biblioteki NPM istnieje ryzyko, że doda ona do `Merged Manifest` uprawnienia sieciowe lub telemetryczne, których sekcja jawnie nie autoryzowała. |
-| **Brak dedykowanego pliku reguł ekstrakcji danych (`dataExtractionRules`)** | Konfiguracja platformy Android (Android 12+) | **Niskie** | Nowsze wersje Androida wymagają jawnego pliku XML precyzującego, które dane z katalogów wewnętrznych piaskownicy podlegają wykluczeniu z transferu urządzenie-urządzenie. |
+| **Brak pełnej obsługi stanów odmowy aparatu w UI przelewu** | Moduł skanera kodów QR | **Niskie** | Użytkownik po zaznaczeniu opcji „Nie pytaj ponownie” (`permanentlyDenied`) musi mieć w interfejsie jasny przycisk otwierający ustawienia aplikacji (`Linking.openSettings()`), bez blokowania możliwości wpisania numeru rachunku ręcznie. |
+| **Brak procedury testowej odmowy i cofnięcia uprawnienia** | Środowisko testowe Android / iOS | **Średnie** | Wymagane przetestowanie zachowania aplikacji przy nagłym odebraniu uprawnienia w czasie działania przez system operacyjny (`adb shell pm revoke com.securebank.app android.permission.CAMERA`). |
+| **Brak jawnych reguł ekstrakcji danych (`dataExtractionRules`)** | Konfiguracja platformy Android (Android 12+) | **Niskie** | Na nowszych wersjach systemu Android brak pliku XML z regułami ekstrakcji może skutkować domyślnym włączeniem transferu plików aplikacji podczas migracji między urządzeniami. |
 
 ---
 
 ## 4. Jak to rozwiązuje nasza platforma?
 
-| Mechanizm / biblioteka | Do czego go użyjemy | Pułapki i ograniczenia |
+| Mechanizm / biblioteka | Do czego go użyjemy | Pułapki i ograniczenia platformy |
 | :--- | :--- | :--- |
-| **Expo Configuration (`app.json`)** | Centralne zarządzanie uprawnieniami Androida i iOS: generowanie wpisów `<uses-permission>` w `AndroidManifest.xml` oraz kluczy `Info.plist` w paczce `.app`. | **Pułapka:** Zewnętrzne biblioteki NPM mogą wstrzykiwać własne uprawnienia do manifestu. Należy stosować jawną tablicę `android.permissions` oraz `blockedPermissions`, aby wymusić usunięcie niechcianych węzłów (`tools:node="remove"`). |
-| **Runtime Permissions API (`expo-camera` / `expo-modules`)** | Asynchroniczne odpytywanie użytkownika o zgodę na dostęp do aparatu w chwili wywołania akcji: `requestCameraPermissionsAsync()`. | **Pułapka:** Na iOS brak wpisu `NSCameraUsageDescription` w `infoPlist` prowadzi do natychmiastowego zamknięcia (crash) procesu aplikacji. Na Androidzie wielokrotna odmowa zmienia stan na `permanentlyDenied`, co wymaga przekierowania do `Linking.openSettings()`. |
-| **Systemowe interfejsy pośredniczące (`expo-sharing`, SAF)** | Zapis i eksport wyciągów bankowych PDF bez konieczności wnioskowania o niebezpieczne uprawnienia `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`. | **Pułapka:** Próba zapisu plików bezpośrednio do pamięci współdzielonej (np. `/sdcard/Download`) zamiast do katalogu podręcznego aplikacji (`FileSystem.cacheDirectory`) i przekazania do systemowego okna udostępniania. |
-| **Architektura Single-Activity (React Native)** | Ochrona logiki biznesowej i widoków bankowych przed bezpośrednim wywołaniem intencji z zewnątrz (`Intent Spoofing`). | **Pułapka:** Zaufanie, że ukrycie komponentu w nawigatorze wystarczy – jeśli backend nie weryfikuje tokena JWT i stanu sesji przy każdym żądaniu, atakujący może odpytać API bezpośrednio poza interfejsem graficznym. |
+| **Expo Config & Plugins (`app.json`)** | Centralne zarządzanie uprawnieniami Androida i iOS: generowanie deklaracji uprawnień w plikach `AndroidManifest.xml` oraz `Info.plist` paczki wynikowej `.app` / `.apk`. | **Pułapka:** Zewnętrzne biblioteki NPM w procesie `prebuild` mogą wstrzykiwać nadmiarowe uprawnienia do `Merged Manifest`. Należy stosować dyrektywę `blockedPermissions` oraz regularnie weryfikować scalony manifest. |
+| **Asynchroniczne API uprawnień w czasie wykonywania (Runtime Permissions)** | Odpytywanie użytkownika o zgodę w chwili akcji (`requestCameraPermissionsAsync()`, `requestForegroundPermissionsAsync()`). | **Pułapka:** Na iOS brak uzasadnienia w `Info.plist` skutkuje twardym zawieszeniem (crash) aplikacji. Na Androidzie permanentna odmowa wymaga obsłużenia stanu `canAskAgain: false` i przekierowania do ustawień systemowych. |
+| **Systemowe interfejsy pośredniczące (Pickery & SAF)** | Dostęp do plików, wyciągów PDF oraz kontaktów za pośrednictwem systemowych okien dialogowych (Storage Access Framework, Photo Picker, Contact Picker). | **Zaleta architektoniczna:** Aplikacja operuje wyłącznie na tymczasowych identyfikatorach URI przekazanych przez system, nie posiadając uprawnień do przeglądania całego dysku ani książki adresowej. |
+| **Architektura Single-Activity (React Native)** | Izolacja ekranów biznesowych przed nieuprawnionym uruchomieniem z zewnątrz przez intencje systemowe (`adb shell am start`). | **Obrona:** Brak dodatkowych aktywności oznaczonych jako `android:exported="true"`. Cała logika autoryzacji i routingu odbywa się wewnątrz silnika JavaScript z weryfikacją tokenów JWT po stronie backendu Supabase. |
 
 ---
 
-## 5. Plan na kolejny tydzień
+## 5. Plan na kolejny tydzień (Zadania na Zajęcia 4)
+
+Zgodnie z wytycznymi ze slajdu 13 prezentacji, przygotowano plan zadań do realizacji na kolejne zajęcia poświęcone **Bezpiecznemu przechowywaniu danych (MASVS-STORAGE)**:
 
 | Zadanie | Osoba | Jak udowodnimy, że działa | Pozycja w checkliście MASVS |
 | :--- | :---: | :--- | :---: |
-| **Implementacja komponentu skanera QR z obsługą cyklu życia uprawnienia aparatu** | Jakub Wodyk | Kod weryfikujący stany uprawnienia (`granted`, `denied`, `permanentlyDenied`); test odmowy z przejściem na formularz ręczny; brak pętli próśb. | MASVS-PLATFORM-1 |
-| **Przeprowadzenie testu cofnięcia uprawnienia w locie (`pm revoke`)** | Jakub Wodyk | Zrzut ekranu lub log z testu: odebranie uprawnienia komendą `adb shell pm revoke com.securebank.app android.permission.CAMERA` podczas działania aplikacji i weryfikacja stabilności UI. | MASVS-PLATFORM-1 |
-| **Weryfikacja scalonego manifestu (`Merged Manifest`) aplikacji** | Jakub Dziewior | Raport ze sprawdzenia scalonego pliku manifestu wygenerowanego poleceniem `npx expo prebuild` potwierdzający obecność wyłącznie uprawnienia `CAMERA` i brak zbędnych uprawnień od bibliotek. | MASVS-PLATFORM-1 |
-| **Inwentaryzacja danych przechowywanych lokalnie (Wstęp do Z4)** | Jakub Dziewior | Przygotowanie tabeli do Krok 1 kolejnego arkusza: lista wszystkich kluczy i plików składowanych na urządzeniu (Keystore, SecureStore, cache) wraz z klasyfikacją danych i metodą ich czyszczenia przy wylogowaniu. | MASVS-STORAGE-1 |
+| **Tabela uprawnień z pełną obsługą odmowy w kodzie i interfejsie** | Jakub Wodyk | Implementacja logiki skanera QR z płynnym fallbackiem na formularz ręczny przy statusie `denied` oraz banerem z przekierowaniem do ustawień przy `permanentlyDenied`. | MASVS-PLATFORM-1 |
+| **Test procedury cofnięcia uprawnienia (`pm revoke`)** | Jakub Wodyk | Przeprowadzenie testu poleceniem `adb shell pm revoke com.securebank.app android.permission.CAMERA` na uruchomionej aplikacji, zarejestrowanie logów i wykazanie braku awarii aplikacji. | MASVS-PLATFORM-1 |
+| **Weryfikacja scalonego manifestu (`Merged Manifest`)** | Jakub Dziewior | Wygenerowanie i audyt scalonego pliku `AndroidManifest.xml` potwierdzający obecność wyłącznie uprawnień autoryzowanych w karcie projektu oraz skuteczne zablokowanie `READ_PHONE_STATE`. | MASVS-PLATFORM-1 |
+| **Kompletna inwentaryzacja danych przechowywanych lokalnie na urządzeniu** | Jakub Dziewior | Opracowanie szczegółowej tabeli magazynu lokalnego (`PinVault`, tokeny sesji szyfrowane AES-256-GCM w `expo-secure-store`, ulotny klucz w RAM, brak nieszyfrowanego `AsyncStorage`) stanowiącej bazę pod Krok 1 w arkuszu Z4. | MASVS-STORAGE-1 |
