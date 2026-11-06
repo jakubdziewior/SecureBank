@@ -14,6 +14,7 @@ import { BankAccount, Transaction, UserProfile } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { SecuritySection } from '../components/SecuritySection';
+import { TransferModal } from '../components/TransferModal';
 
 interface HomeScreenProps {
   session: any;
@@ -29,6 +30,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const [transferVisible, setTransferVisible] = useState(false);
 
   const balanceOpacity = useRef(new Animated.Value(1)).current;
   const balanceScale = useRef(new Animated.Value(1)).current;
@@ -157,10 +159,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
   };
 
   const handleTransferModal = () => {
-    Alert.alert(
-      'Nowy przelew',
-      'Moduł autoryzacji zleceń zostanie zintegrowany w kolejnym etapie.'
-    );
+    setTransferVisible(true);
+  };
+
+  const handleTransferSubmitted = () => {
+    setTransferVisible(false);
+    Alert.alert('Nowy przelew', 'Przelew został zlecony i oczekuje na realizację.');
+    fetchUserData();
   };
 
   const getUserInitials = (): string => {
@@ -439,6 +444,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
           )}
         </View>
       </ScrollView>
+
+      <TransferModal
+        visible={transferVisible}
+        account={account}
+        onClose={() => setTransferVisible(false)}
+        onSubmitted={handleTransferSubmitted}
+      />
     </View>
   );
 };

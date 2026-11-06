@@ -27,7 +27,8 @@
         "android.permission.CAMERA"
       ],
       "blockedPermissions": [
-        "android.permission.READ_PHONE_STATE"
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.RECORD_AUDIO"
       ],
       "allowBackup": false
     },
@@ -36,6 +37,14 @@
         "expo-secure-store",
         {
           "faceIDPermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Aparat jest wymagany do skanowania kodów QR z danymi przelewu.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       "expo-asset"
