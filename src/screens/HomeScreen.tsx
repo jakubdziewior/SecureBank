@@ -44,6 +44,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
 
   const fetchUserData = async () => {
     setLoading(true);
+    const meta = session?.user?.user_metadata || {};
+
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -52,13 +54,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
         .single();
 
       if (!profileError && profileData) {
-        setProfile(profileData);
+        setProfile({
+          ...profileData,
+          first_name: profileData.first_name || meta.first_name || 'Użytkownik',
+          last_name: profileData.last_name || meta.last_name || '',
+          pesel: profileData.pesel || meta.pesel || '920101*****',
+          client_number: profileData.client_number || meta.client_number || '84729103',
+        });
       } else {
         setProfile({
           id: userId,
-          first_name: 'Jan',
-          last_name: 'Kowalski',
-          pesel: '920101*****',
+          first_name: meta.first_name || 'Jan',
+          last_name: meta.last_name || 'Kowalski',
+          pesel: meta.pesel || '920101*****',
+          client_number: meta.client_number || '84729103',
           role: 'client',
           is_blocked: false,
           two_factor_enabled: true,
@@ -76,11 +85,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
         setAccount(accountData);
       } else {
         setAccount({
-          id: 'acc-uuid-1',
+          id: 'acc-' + userId.slice(0, 8),
           user_id: userId,
-          account_number: 'PL 10 1050 0099 7654 3210 0001',
+          account_number: meta.account_number || 'PL 10 1050 0099 7654 3210 0001',
           currency: 'PLN',
-          balance: 14250.75,
+          balance: 1000.0,
           daily_limit: 5000.0,
           created_at: new Date().toISOString(),
         });
@@ -172,6 +181,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
     if (profile?.first_name && profile?.last_name) {
       return `${profile.first_name[0]}${profile.last_name[0]}`.toUpperCase();
     }
+    if (profile?.first_name) {
+      return profile.first_name.slice(0, 2).toUpperCase();
+    }
     return userEmail.slice(0, 2).toUpperCase();
   };
 
@@ -187,6 +199,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
   const totalOutflow = transactions
     .filter((t) => !t.title.toLowerCase().includes('wynagrodzenie') && !t.title.toLowerCase().includes('przychodzący'))
     .reduce((sum, t) => sum + t.amount, 0);
+
+  const fullName = profile?.last_name
+    ? `${profile.first_name} ${profile.last_name}`
+    : profile?.first_name || 'Użytkowniku';
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -213,18 +229,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
               </Text>
             </View>
             <View style={styles.nameBlock}>
-              <Text style={[styles.welcomeText, { color: theme.textPrimary }]}>
-                Witaj, {profile?.first_name || 'Użytkowniku'}
+              <Text style={[styles.welcomeText, { color: theme.textPrimary }]} numberOfLines={1}>
+                Witaj, {fullName}
               </Text>
-              <View
-                style={[
-                  styles.roleBadge,
-                  { backgroundColor: theme.cardSecondary },
-                ]}
-              >
-                <Text style={[styles.roleBadgeText, { color: theme.textSecondary }]}>
-                  {profile?.role === 'admin' ? 'Administrator' : 'Konto osobiste'}
-                </Text>
+              <View style={styles.metaBadgeRow}>
+                <View
+                  style={[
+                    styles.roleBadge,
+                    { backgroundColor: theme.cardSecondary },
+                  ]}
+                >
+                  <Text style={[styles.roleBadgeText, { color: theme.textSecondary }]}>
+                    {profile?.role === 'admin' ? 'Administrator' : 'Konto osobiste'}
+                  </Text>
+                </View>
+                {profile?.client_number ? (
+                  <View
+                    style={[
+                      styles.clientIdBadge,
+                      {
+                        backgroundColor: theme.cardSecondary,
+                        borderColor: theme.cardBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.clientIdText, { color: theme.primary }]}>
+                      ID: {profile.client_number}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           </View>
@@ -473,6 +506,8 @@ const styles = StyleSheet.create({
   userInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
   },
   avatar: {
     width: 44,
@@ -489,13 +524,20 @@ const styles = StyleSheet.create({
   },
   nameBlock: {
     justifyContent: 'center',
+    flex: 1,
   },
   welcomeText: {
     fontSize: 17,
     fontWeight: '700',
   },
+  metaBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
   roleBadge: {
-    marginTop: 2,
     paddingVertical: 2,
     paddingHorizontal: 8,
     borderRadius: 6,
@@ -504,6 +546,18 @@ const styles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 11,
     fontWeight: '600',
+  },
+  clientIdBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  clientIdText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   headerControls: {
     flexDirection: 'row',

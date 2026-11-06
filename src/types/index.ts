@@ -5,6 +5,7 @@ export interface UserProfile {
   first_name: string;
   last_name: string;
   pesel: string;
+  client_number?: string;
   role: UserRole;
   is_blocked: boolean;
   two_factor_enabled: boolean;

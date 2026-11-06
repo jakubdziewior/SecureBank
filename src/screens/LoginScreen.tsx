@@ -24,12 +24,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [pesel, setPesel] = useState('');
+
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [emailError, setEmailError] = useState(false);
   const [passwordError, setPasswordError] = useState(false);
+  const [confirmPasswordError, setConfirmPasswordError] = useState(false);
+  const [firstNameError, setFirstNameError] = useState(false);
+  const [lastNameError, setLastNameError] = useState(false);
+  const [peselError, setPeselError] = useState(false);
+
   const [trackWidth, setTrackWidth] = useState(0);
 
   const [banner, setBanner] = useState<{
@@ -90,12 +101,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     });
   };
 
+  const clearValidationErrors = () => {
+    setEmailError(false);
+    setPasswordError(false);
+    setConfirmPasswordError(false);
+    setFirstNameError(false);
+    setLastNameError(false);
+    setPeselError(false);
+  };
+
   const handleTabChange = (registerMode: boolean) => {
     if (isRegistering === registerMode) return;
 
     hideFeedback();
-    setEmailError(false);
-    setPasswordError(false);
+    clearValidationErrors();
 
     Animated.parallel([
       Animated.spring(tabAnim, {
@@ -121,42 +140,103 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setIsRegistering(registerMode);
   };
 
-  const validateInput = (): boolean => {
-    let errEmail = false;
-    let errPass = false;
-    let hasError = false;
+  const generateClientNumber = (): string => {
+    return Math.floor(10000000 + Math.random() * 90000000).toString();
+  };
 
-    if (!email.trim() && !password) {
-      errEmail = true;
-      errPass = true;
-      showFeedback('error', 'Wprowadź adres e-mail oraz hasło.');
-      hasError = true;
-    } else if (!email.trim()) {
-      errEmail = true;
-      showFeedback('error', 'Wprowadź adres e-mail.');
-      hasError = true;
-    } else {
+  const generateAccountNumber = (): string => {
+    const checkDigits = Math.floor(10 + Math.random() * 89).toString();
+    const bankCode = '1050 0099';
+    const p1 = Math.floor(1000 + Math.random() * 9000).toString();
+    const p2 = Math.floor(1000 + Math.random() * 9000).toString();
+    const p3 = Math.floor(1000 + Math.random() * 9000).toString();
+    const p4 = Math.floor(1000 + Math.random() * 9000).toString();
+    return `PL ${checkDigits} ${bankCode} ${p1} ${p2} ${p3} ${p4}`;
+  };
+
+  const validateInput = (): boolean => {
+    clearValidationErrors();
+
+    if (isRegistering) {
+      if (!firstName.trim()) {
+        setFirstNameError(true);
+        showFeedback('error', 'Wprowadź imię.');
+        return false;
+      }
+
+      if (!lastName.trim()) {
+        setLastNameError(true);
+        showFeedback('error', 'Wprowadź nazwisko.');
+        return false;
+      }
+
+      const cleanPesel = pesel.trim();
+      if (!cleanPesel) {
+        setPeselError(true);
+        showFeedback('error', 'Wprowadź numer PESEL.');
+        return false;
+      }
+      if (!/^\d{11}$/.test(cleanPesel)) {
+        setPeselError(true);
+        showFeedback('error', 'Numer PESEL musi składać się z dokładnie 11 cyfr.');
+        return false;
+      }
+
+      if (!email.trim()) {
+        setEmailError(true);
+        showFeedback('error', 'Wprowadź adres e-mail.');
+        return false;
+      }
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email.trim())) {
-        errEmail = true;
+        setEmailError(true);
         showFeedback('error', 'Wprowadź poprawny format adresu e-mail.');
-        hasError = true;
+        return false;
       }
+
+      if (!password) {
+        setPasswordError(true);
+        showFeedback('error', 'Wprowadź hasło dostępowe.');
+        return false;
+      }
+      if (password.length < 8) {
+        setPasswordError(true);
+        showFeedback('error', 'Hasło musi zawierać co najmniej 8 znaków.');
+        return false;
+      }
+
+      if (!confirmPassword) {
+        setConfirmPasswordError(true);
+        showFeedback('error', 'Powtórz wprowadzone hasło.');
+        return false;
+      }
+      if (password !== confirmPassword) {
+        setConfirmPasswordError(true);
+        showFeedback('error', 'Wprowadzone hasła różnią się od siebie.');
+        return false;
+      }
+
+      return true;
     }
 
-    if (!hasError && !password) {
-      errPass = true;
+    if (!email.trim()) {
+      setEmailError(true);
+      showFeedback('error', 'Wprowadź adres e-mail lub 8-cyfrowy numer klienta.');
+      return false;
+    }
+
+    if (!password) {
+      setPasswordError(true);
       showFeedback('error', 'Wprowadź hasło dostępowe.');
-      hasError = true;
-    } else if (!hasError && password.length < 8) {
-      errPass = true;
+      return false;
+    }
+    if (password.length < 8) {
+      setPasswordError(true);
       showFeedback('error', 'Hasło musi zawierać co najmniej 8 znaków.');
-      hasError = true;
+      return false;
     }
 
-    setEmailError(errEmail);
-    setPasswordError(errPass);
-    return !hasError;
+    return true;
   };
 
   const handleAuth = async () => {
@@ -165,16 +245,50 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setLoading(true);
     hideFeedback();
 
-    const cleanEmail = email.trim().toLowerCase();
+    const rawLogin = email.trim();
 
     try {
       if (isRegistering) {
+        const cleanEmail = rawLogin.toLowerCase();
+        const clientNumber = generateClientNumber();
+        const accountNumber = generateAccountNumber();
+
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
+          options: {
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              pesel: pesel.trim(),
+              client_number: clientNumber,
+              account_number: accountNumber,
+            },
+          },
         });
 
         if (error) throw error;
+
+        if (data.user) {
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              pesel: pesel.trim(),
+              client_number: clientNumber,
+              role: 'client',
+            });
+            await supabase.from('accounts').upsert({
+              user_id: data.user.id,
+              account_number: accountNumber,
+              currency: 'PLN',
+              balance: 1000.0,
+              daily_limit: 5000.0,
+            });
+          } catch {
+          }
+        }
 
         if (data.session) {
           onLoginSuccess(data.session);
@@ -184,19 +298,37 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             password,
           });
 
-          if (!signInError && signInData.session) {
+          if (!signInError && signInData?.session) {
             onLoginSuccess(signInData.session);
           } else {
             handleTabChange(false);
+            setEmail(clientNumber);
+            setPassword('');
+            setConfirmPassword('');
             showFeedback(
-              'info',
-              'Konto zostało zarejestrowane. Zaloguj się przy użyciu podanych danych.'
+              'success',
+              `Konto utworzone. Twój numer klienta: ${clientNumber}. Zaloguj się.`
             );
           }
         }
       } else {
+        let authEmail = rawLogin.toLowerCase();
+
+        if (!authEmail.includes('@')) {
+          try {
+            const { data: rpcEmail, error: rpcError } = await supabase.rpc(
+              'lookup_email_by_client_number',
+              { p_client_number: rawLogin }
+            );
+            if (!rpcError && rpcEmail) {
+              authEmail = String(rpcEmail).toLowerCase();
+            }
+          } catch {
+          }
+        }
+
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
+          email: authEmail,
           password,
         });
 
@@ -416,9 +548,114 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               </Animated.View>
             )}
 
+            {isRegistering && (
+              <>
+                <View style={styles.inputContainer}>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      { color: firstNameError ? theme.expense : theme.textMuted },
+                    ]}
+                  >
+                    Imię
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      {
+                        backgroundColor: theme.inputBg,
+                        borderColor: firstNameError ? theme.expense : theme.inputBorder,
+                        color: theme.textPrimary,
+                      },
+                    ]}
+                    placeholder="np. Jan"
+                    placeholderTextColor={theme.textMuted}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    value={firstName}
+                    onChangeText={(text) => {
+                      setFirstName(text);
+                      if (firstNameError) setFirstNameError(false);
+                      if (banner) hideFeedback();
+                    }}
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      { color: lastNameError ? theme.expense : theme.textMuted },
+                    ]}
+                  >
+                    Nazwisko
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      {
+                        backgroundColor: theme.inputBg,
+                        borderColor: lastNameError ? theme.expense : theme.inputBorder,
+                        color: theme.textPrimary,
+                      },
+                    ]}
+                    placeholder="np. Kowalski"
+                    placeholderTextColor={theme.textMuted}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    value={lastName}
+                    onChangeText={(text) => {
+                      setLastName(text);
+                      if (lastNameError) setLastNameError(false);
+                      if (banner) hideFeedback();
+                    }}
+                  />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      { color: peselError ? theme.expense : theme.textMuted },
+                    ]}
+                  >
+                    Numer PESEL (11 cyfr)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      {
+                        backgroundColor: theme.inputBg,
+                        borderColor: peselError ? theme.expense : theme.inputBorder,
+                        color: theme.textPrimary,
+                      },
+                    ]}
+                    placeholder="np. 92010112345"
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="numeric"
+                    maxLength={11}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    value={pesel}
+                    onChangeText={(text) => {
+                      const digitsOnly = text.replace(/[^0-9]/g, '');
+                      setPesel(digitsOnly);
+                      if (peselError) setPeselError(false);
+                      if (banner) hideFeedback();
+                    }}
+                  />
+                </View>
+              </>
+            )}
+
             <View style={styles.inputContainer}>
-              <Text style={[styles.inputLabel, { color: emailError ? theme.expense : theme.textMuted }]}>
-                Adres e-mail
+              <Text
+                style={[
+                  styles.inputLabel,
+                  { color: emailError ? theme.expense : theme.textMuted },
+                ]}
+              >
+                {isRegistering ? 'Adres e-mail' : 'Adres e-mail lub Numer klienta'}
               </Text>
               <TextInput
                 style={[
@@ -429,9 +666,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     color: theme.textPrimary,
                   },
                 ]}
-                placeholder="uzytkownik@securebank.pl"
+                placeholder={
+                  isRegistering ? 'uzytkownik@securebank.pl' : 'np. 84729103 lub email'
+                }
                 placeholderTextColor={theme.textMuted}
-                keyboardType="email-address"
+                keyboardType={isRegistering ? 'email-address' : 'default'}
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={email}
@@ -445,7 +684,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
             <View style={styles.inputContainer}>
               <View style={styles.inputHeaderRow}>
-                <Text style={[styles.inputLabel, { color: passwordError ? theme.expense : theme.textMuted }]}>
+                <Text
+                  style={[
+                    styles.inputLabel,
+                    { color: passwordError ? theme.expense : theme.textMuted },
+                  ]}
+                >
                   Hasło
                 </Text>
                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
@@ -476,6 +720,50 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               />
             </View>
 
+            {isRegistering && (
+              <View style={styles.inputContainer}>
+                <View style={styles.inputHeaderRow}>
+                  <Text
+                    style={[
+                      styles.inputLabel,
+                      { color: confirmPasswordError ? theme.expense : theme.textMuted },
+                    ]}
+                  >
+                    Powtórz hasło
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Text style={[styles.passwordToggleText, { color: theme.primary }]}>
+                      {showConfirmPassword ? 'Ukryj' : 'Pokaż'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={[
+                    styles.inputField,
+                    {
+                      backgroundColor: theme.inputBg,
+                      borderColor: confirmPasswordError
+                        ? theme.expense
+                        : theme.inputBorder,
+                      color: theme.textPrimary,
+                    },
+                  ]}
+                  placeholder="Powtórz hasło dostępowe"
+                  placeholderTextColor={theme.textMuted}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  value={confirmPassword}
+                  onChangeText={(text) => {
+                    setConfirmPassword(text);
+                    if (confirmPasswordError) setConfirmPasswordError(false);
+                    if (banner) hideFeedback();
+                  }}
+                />
+              </View>
+            )}
+
             <Animated.View style={{ opacity: buttonFadeAnim }}>
               <TouchableOpacity
                 style={[
@@ -490,7 +778,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 {loading ? (
                   <ActivityIndicator color={theme.primaryForeground} />
                 ) : (
-                  <Text style={[styles.primaryButtonText, { color: theme.primaryForeground }]}>
+                  <Text
+                    style={[
+                      styles.primaryButtonText,
+                      { color: theme.primaryForeground },
+                    ]}
+                  >
                     {isRegistering ? 'Utwórz konto' : 'Zaloguj się'}
                   </Text>
                 )}
@@ -636,7 +929,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   inputContainer: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   inputHeaderRow: {
     flexDirection: 'row',
@@ -669,7 +962,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 6,

@@ -4,6 +4,7 @@
 | :--- | :--- |
 | **Aplikacja** | SecureBank (React Native, Expo SDK 58, TypeScript) |
 | **Pakiet** | `com.securebank.app` |
+| **Odpowiedzialny** | Jakub Dziewior |
 | **Obszar MASVS** | MASVS-STORAGE-1, MASVS-STORAGE-2 |
 | **Źródło** | Analiza kodu (`src/`, `App.tsx`, `app.json`) oraz kodu bibliotek w `node_modules` |
 
@@ -11,7 +12,9 @@ Inwentaryzacja obejmuje dane zapisywane przez nasz kod, dane zapisywane pod spod
 
 **Klasyfikacja:** Publiczne · Wewnętrzne · Poufne · Szczególnie wrażliwe
 
-## Dane zapisywane przez aplikację
+---
+
+## 1. Dane zapisywane przez aplikację
 
 | Dane | Gdzie są teraz | Klasyfikacja | Musi być na urządzeniu? | Docelowe miejsce i opcja |
 | :--- | :--- | :--- | :--- | :--- |
@@ -23,14 +26,16 @@ Inwentaryzacja obejmuje dane zapisywane przez nasz kod, dane zapisywane pod spod
 | **PIN** (6 cyfr) | Nigdzie nie jest zapisywany; na serwerze tylko skrót bcrypt (`user_pins.pin_hash`) | Szczególnie wrażliwe | Nie | Brak zapisu; wpisywany na własnej klawiaturze `PinPad` |
 | **Hasło do konta** | Tylko stan komponentu `LoginScreen` w trakcie logowania | Szczególnie wrażliwe | Nie | Brak zapisu; pole `secureTextEntry` |
 | **Sekret TOTP** (Base32) | RAM w czasie konfiguracji (`TotpSetupModal`); **kopiowany do schowka systemowego** przy „Otwórz Google Authenticator” i „Kopiuj klucz” | Szczególnie wrażliwe | Nie: potrzebny tylko Google Authenticatorowi | Bez schowka (przekazanie przez `otpauth-migration://`); kopiowanie tylko na żądanie z czyszczeniem schowka (K2) |
-| **Profil klienta** (imię, nazwisko, PESEL, rola) | Stan React (`HomeScreen`), pobierany z API przy każdym wejściu zapytaniem `select('*')`, więc pełny PESEL trafia do pamięci, choć nie jest wyświetlany | Szczególnie wrażliwe | Nie: pobierany z API; PESEL w ogóle niepotrzebny w aplikacji | Brak zapisu; zapytanie tylko o `first_name`, `last_name`, `role` (K1); wyłączenie cache HTTP (K2) |
-| **Saldo, numer rachunku, limit dzienny** | Stan React (`HomeScreen`) | Poufne | Nie: pobierane z API | Brak zapisu; zasłona w przełączniku zadań (K2) |
+| **Profil klienta** (imię, nazwisko, PESEL, numer klienta / login, rola) | Stan React (`HomeScreen`), pobierany z API przy każdym wejściu zapytaniem o profil użytkownika | Szczególnie wrażliwe | Nie: pobierany z API; minimalizacja danych na urządzeniu | Brak trwałego zapisu na dysku; zapytanie tylko o `first_name`, `last_name`, `client_number`, `role` (K1); wyłączenie cache HTTP (K2) |
+| **Saldo, numer rachunku (NRB/IBAN), limit dzienny** | Stan React (`HomeScreen`), powiązany z unikalnym kontem klienta | Poufne | Nie: pobierane z API | Brak zapisu; zasłona w przełączniku zadań (K2) |
 | **Historia transakcji** | Stan React (`HomeScreen`), 5 ostatnich pozycji | Poufne | Nie: pobierana z API | Brak zapisu, cache wyłączony |
 | **Formularz przelewu i dane z kodu QR** | Stan React (`TransferModal`), znika po zamknięciu formularza | Poufne | Nie | Brak zapisu; wyłączone podpowiedzi klawiatury (K2) |
 | **Preferencja motywu** (jasny / ciemny) | Stan React (`ThemeContext`), niezapisywana | Publiczne | Nie (opcjonalnie) | Jeżeli zostanie utrwalona: zwykłe preferencje, bez szyfrowania |
 | **Logi diagnostyczne** | `console.info` `[SecureBank/CameraPermission] source=… status=…` (także w release); `console.warn` błędów SecureStore tylko w `__DEV__` | Wewnętrzne | Nie | Logi bez danych; w release tylko stany uprawnień (K2) |
 
-## Dane zapisywane przez biblioteki
+---
+
+## 2. Dane zapisywane przez biblioteki
 
 | Dane | Biblioteka | Gdzie są teraz | Klasyfikacja | Musi być na urządzeniu? | Docelowe miejsce i opcja |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -43,7 +48,9 @@ Inwentaryzacja obejmuje dane zapisywane przez nasz kod, dane zapisywane pod spod
 | **Zrzut ekranu w przełączniku zadań** | System (Android Recents / iOS App Switcher) | Zapisywany przez system przy przejściu w tło: widać saldo, numer rachunku i transakcje | Poufne | Nie | `FLAG_SECURE` / zasłona przy przejściu w tło (K2) |
 | **Wersja web: sesja** | `SecureStoreAdapter` (gałąź `web`) | `sessionStorage` przeglądarki jawnym tekstem | Poufne | Tak (tylko demo web) | Wersja web wyłącznie do prezentacji, nie jest produktem docelowym |
 
-## Funkcje zaplanowane (tabela uprawnień z Z3)
+---
+
+## 3. Funkcje zaplanowane (tabela uprawnień z Z3)
 
 | Dane | Gdzie powstaną | Klasyfikacja | Musi być na urządzeniu? | Docelowe miejsce i opcja |
 | :--- | :--- | :--- | :--- | :--- |
@@ -55,11 +62,13 @@ Inwentaryzacja obejmuje dane zapisywane przez nasz kod, dane zapisywane pod spod
 | **Regulamin w WebView** | `react-native-webview` | Publiczne | Nie | `incognito`, `cacheEnabled={false}`, bez ciasteczek sesji |
 | **Flaga pierwszego uruchomienia** | Zwykły plik w `documentDirectory` (usuwany przy odinstalowaniu) | Publiczne | Tak: wykrycie reinstalacji na iOS | Plik bez danych osobowych, wykluczony z kopii zapasowej (K3) |
 
-## Podsumowanie
+---
+
+## 4. Podsumowanie
 
 | Kategoria | Liczba pozycji | Na dysku |
 | :--- | :---: | :--- |
-| Sekrety (sesja, skarbiec PIN, licznik) | 3 | Tylko `expo-secure-store` (Keystore / Keychain), sesja dodatkowo AES-GCM kluczem z PIN-u |
-| Dane klienta i operacji | 5 | Brak zapisu przez aplikację; ryzyko pośrednie: cache HTTP i przełącznik zadań |
-| Dane uwierzytelniające wpisywane przez użytkownika (PIN, hasło, sekret TOTP) | 3 | Brak zapisu; wyciek przez schowek dla sekretu TOTP |
-| Dane bibliotek i systemu | 8 | Opisane wyżej; do zamknięcia: cache HTTP, zrzut w przełączniku zadań |
+| **Sekrety (sesja, skarbiec PIN, licznik)** | 3 | Tylko `expo-secure-store` (Keystore / Keychain), sesja dodatkowo AES-GCM kluczem z PIN-u |
+| **Dane klienta i operacji** | 5 | Brak zapisu przez aplikację; ryzyko pośrednie: cache HTTP i przełącznik zadań |
+| **Dane uwierzytelniające wpisywane przez użytkownika (PIN, hasło, sekret TOTP)** | 3 | Brak zapisu; wyciek przez schowek dla sekretu TOTP |
+| **Dane bibliotek i systemu** | 8 | Opisane wyżej; do zamknięcia: cache HTTP, zrzut w przełączniku zadań |

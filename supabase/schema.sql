@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     pesel VARCHAR(11) UNIQUE NOT NULL,
+    client_number VARCHAR(10) UNIQUE,
     role VARCHAR(20) DEFAULT 'client' CHECK (role IN ('client', 'admin')),
     is_blocked BOOLEAN DEFAULT false,
     two_factor_enabled BOOLEAN DEFAULT false,
@@ -64,6 +65,10 @@ CREATE POLICY "profiles_select_own"
 ON public.profiles FOR SELECT 
 USING (auth.uid() = id OR public.is_admin());
 
+CREATE POLICY "profiles_insert_own" 
+ON public.profiles FOR INSERT 
+WITH CHECK (auth.uid() = id);
+
 CREATE POLICY "profiles_update_admin" 
 ON public.profiles FOR UPDATE 
 USING (public.is_admin())
@@ -72,6 +77,10 @@ WITH CHECK (public.is_admin());
 CREATE POLICY "accounts_select_own" 
 ON public.accounts FOR SELECT 
 USING (auth.uid() = user_id OR public.is_admin());
+
+CREATE POLICY "accounts_insert_own" 
+ON public.accounts FOR INSERT 
+WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "transactions_select_own" 
 ON public.transactions FOR SELECT 
@@ -96,6 +105,67 @@ WITH CHECK (auth.uid() IS NOT NULL);
 CREATE POLICY "audit_logs_select_admin" 
 ON public.audit_logs FOR SELECT 
 USING (public.is_admin());
+
+CREATE OR REPLACE FUNCTION public.lookup_email_by_client_number(p_client_number TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_email TEXT;
+BEGIN
+    SELECT u.email INTO v_email
+    FROM auth.users u
+    JOIN public.profiles p ON p.id = u.id
+    WHERE p.client_number = p_client_number
+    LIMIT 1;
+    RETURN v_email;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.lookup_email_by_client_number(TEXT) TO anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_client_number VARCHAR(10);
+    v_account_number VARCHAR(26);
+BEGIN
+    v_client_number := COALESCE(
+        new.raw_user_meta_data->>'client_number',
+        LPAD(FLOOR(10000000 + RANDOM() * 90000000)::TEXT, 8, '0')
+    );
+    v_account_number := COALESCE(
+        new.raw_user_meta_data->>'account_number',
+        'PL ' || LPAD(FLOOR(10 + RANDOM() * 89)::TEXT, 2, '0') || ' 1050 0099 ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+    );
+
+    INSERT INTO public.profiles (id, first_name, last_name, pesel, client_number, role)
+    VALUES (
+        new.id,
+        COALESCE(new.raw_user_meta_data->>'first_name', 'Użytkownik'),
+        COALESCE(new.raw_user_meta_data->>'last_name', 'SecureBank'),
+        COALESCE(new.raw_user_meta_data->>'pesel', '00000000000'),
+        v_client_number,
+        'client'
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    INSERT INTO public.accounts (user_id, account_number, currency, balance, daily_limit)
+    VALUES (
+        new.id,
+        v_account_number,
+        'PLN',
+        1000.00,
+        5000.00
+    )
+    ON CONFLICT DO NOTHING;
+
+    RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 CREATE OR REPLACE FUNCTION public.mfa_satisfied()
 RETURNS BOOLEAN AS $$
