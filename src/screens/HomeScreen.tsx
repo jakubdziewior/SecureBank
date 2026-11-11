@@ -49,7 +49,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, first_name, last_name, role, client_number, is_blocked, two_factor_enabled, created_at')
         .eq('id', userId)
         .single();
 
@@ -58,7 +58,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
           ...profileData,
           first_name: profileData.first_name || meta.first_name || 'Użytkownik',
           last_name: profileData.last_name || meta.last_name || '',
-          pesel: profileData.pesel || meta.pesel || '920101*****',
           client_number: profileData.client_number || meta.client_number || '84729103',
         });
       } else {
@@ -66,7 +65,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
           id: userId,
           first_name: meta.first_name || 'Jan',
           last_name: meta.last_name || 'Kowalski',
-          pesel: meta.pesel || '920101*****',
           client_number: meta.client_number || '84729103',
           role: 'client',
           is_blocked: false,

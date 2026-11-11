@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
-import { decryptWithSessionKey, encryptWithSessionKey, hasPinVault, isEncryptedValue } from './pin';
+import { decryptWithSessionKey, encryptWithSessionKey, isEncryptedValue } from './pin';
 
 const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder-project.supabase.co';
 const SUPABASE_URL = rawUrl.trim().replace(/\/+$/, '');
@@ -101,10 +101,11 @@ const SecureStoreAdapter = {
       if (encrypted) {
         pendingValues.delete(key);
         await writeRaw(key, encrypted);
-      } else if (await hasPinVault()) {
-        pendingValues.set(key, value);
       } else {
-        await writeRaw(key, value);
+        // Zgodnie z D3/K1: do chwili utworzenia i odblokowania skarbca PIN sesja
+        // jest trzymana wylacznie w pamieci RAM (pendingValues).
+        // Nigdy nie zapisujemy nieszyfrowanej sesji bez warstwy 'enc1:' do SecureStore.xml.
+        pendingValues.set(key, value);
       }
     } catch (error) {
       logStorageError('Zapis', error);
@@ -127,6 +128,16 @@ const SecureStoreAdapter = {
   },
 };
 
+const secureFetch: typeof fetch = (input, init) => {
+  const headers = new Headers(init?.headers);
+  headers.set('Cache-Control', 'no-store');
+  headers.set('Pragma', 'no-cache');
+  return fetch(input, {
+    ...init,
+    headers,
+  });
+};
+
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: SecureStoreAdapter,
@@ -134,6 +145,13 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+  },
+  global: {
+    headers: {
+      'Cache-Control': 'no-store',
+      Pragma: 'no-cache',
+    },
+    fetch: secureFetch,
   },
 });
 
@@ -193,6 +211,8 @@ export const checkSupabaseConnection = async (): Promise<{
       method: 'GET',
       headers: {
         apikey: SUPABASE_ANON_KEY,
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
       },
     });
 

@@ -4,7 +4,7 @@ export interface UserProfile {
   id: string;
   first_name: string;
   last_name: string;
-  pesel: string;
+  pesel?: string;
   client_number?: string;
   role: UserRole;
   is_blocked: boolean;
