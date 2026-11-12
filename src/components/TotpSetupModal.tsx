@@ -11,7 +11,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import {
   TotpEnrollment,
   buildGoogleAuthenticatorUri,
@@ -19,6 +18,7 @@ import {
   startTotpEnrollment,
   verifyTotpCode,
 } from '../services/mfa';
+import { clearSensitiveClipboard, copySensitive } from '../services/secureClipboard';
 import { useTheme } from '../theme/ThemeContext';
 
 interface TotpSetupModalProps {
@@ -52,21 +52,29 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
       .finally(() => setLoading(false));
   }, [visible]);
 
+  useEffect(() => {
+    if (!visible) {
+      clearSensitiveClipboard();
+    }
+    return () => {
+      clearSensitiveClipboard();
+    };
+  }, [visible]);
+
   const handleOpenAuthenticator = async () => {
     if (!enrollment) return;
-    await Clipboard.setStringAsync(enrollment.secret);
     try {
       await Linking.openURL(buildGoogleAuthenticatorUri(enrollment, accountName));
-      setInfo('Klucz skopiowany. Jeśli konto nie dodało się automatycznie, w Google Authenticator wybierz + → Wpisz klucz konfiguracji i wklej klucz.');
+      setInfo('Jeśli konto nie dodało się automatycznie, w Google Authenticator wybierz + → Wpisz klucz konfiguracji i przepisz klucz poniżej.');
     } catch {
-      setInfo('Nie znaleziono Google Authenticator. Klucz skopiowano do schowka: dodaj konto ręcznie (+ → Wpisz klucz konfiguracji).');
+      setInfo('Nie znaleziono Google Authenticator. Dodaj konto ręcznie (+ → Wpisz klucz konfiguracji), przepisując klucz poniżej.');
     }
   };
 
   const handleCopySecret = async () => {
     if (!enrollment) return;
-    await Clipboard.setStringAsync(enrollment.secret);
-    setInfo('Klucz skopiowany do schowka.');
+    await copySensitive(enrollment.secret);
+    setInfo('Klucz skopiowany. Schowek zostanie wyczyszczony po 60 s.');
   };
 
   const handleConfirm = async () => {

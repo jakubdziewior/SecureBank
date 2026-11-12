@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, ActivityIndicator, Animated, AppState, AppStateStatus, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as ScreenCapture from 'expo-screen-capture';
 import {
   supabase,
   resealStoredSession,
-  clearStoredSession,
   discardPendingSession,
   hasEncryptedStoredSession,
 } from './src/services/supabase';
@@ -12,7 +12,6 @@ import {
   PinUnlockResult,
   PinVaultInfo,
   createPin,
-  deletePinVault,
   getPinVaultInfo,
   isSessionUnlocked,
   lockSession,
@@ -21,6 +20,9 @@ import {
 } from './src/services/pin';
 import { getAccountPinStatus, setAccountPin, verifyAccountPin } from './src/services/accountPin';
 import { isMfaVerificationRequired } from './src/services/mfa';
+import { ensureFreshInstallState, wipeLocalSessionData } from './src/services/deviceState';
+import { clearSensitiveClipboard } from './src/services/secureClipboard';
+import { PrivacyCurtain } from './src/components/PrivacyCurtain';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
 import { PinScreen } from './src/screens/PinScreen';
@@ -30,6 +32,8 @@ import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 const LOCK_AFTER_BACKGROUND_MS = 30000;
 const PIN_SUPPORTED = Platform.OS !== 'web';
 
+type SignOutScope = 'local' | 'global';
+
 type Gate = 'loading' | 'login' | 'mfa' | 'pinSetup' | 'pinConfirm' | 'pinUnlock' | 'home';
 
 const MainNavigator = () => {
@@ -37,6 +41,7 @@ const MainNavigator = () => {
   const [gate, setGate] = useState<Gate>('loading');
   const [vaultInfo, setVaultInfo] = useState<PinVaultInfo | null>(null);
   const [pinChangedElsewhere, setPinChangedElsewhere] = useState(false);
+  const [curtainVisible, setCurtainVisible] = useState(false);
   const { theme, isDark } = useTheme();
 
   const screenTransition = useRef(new Animated.Value(1)).current;
@@ -128,7 +133,21 @@ const MainNavigator = () => {
   };
 
   useEffect(() => {
-    refreshGate();
+    if (!PIN_SUPPORTED) return;
+    ScreenCapture.preventScreenCaptureAsync().catch(() => {});
+    if (Platform.OS === 'ios') {
+      ScreenCapture.enableAppSwitcherProtectionAsync(1).catch(() => {});
+    }
+    return () => {
+      ScreenCapture.allowScreenCaptureAsync().catch(() => {});
+      if (Platform.OS === 'ios') {
+        ScreenCapture.disableAppSwitcherProtectionAsync().catch(() => {});
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    ensureFreshInstallState().finally(refreshGate);
 
     const {
       data: { subscription },
@@ -153,6 +172,9 @@ const MainNavigator = () => {
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (PIN_SUPPORTED) {
+        setCurtainVisible(nextState !== 'active');
+      }
       if (nextState === 'background') {
         backgroundedAtRef.current = Date.now();
         return;
@@ -173,22 +195,26 @@ const MainNavigator = () => {
     };
   }, []);
 
-  const handleFullLogout = async () => {
+  const signOutAndWipe = async (scope: SignOutScope) => {
     try {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope });
     } catch {
     }
-    await clearStoredSession();
-    lockSession();
+    await clearSensitiveClipboard();
+    await wipeLocalSessionData();
     pinResetRequestedRef.current = false;
     passwordLoginRef.current = false;
+  };
+
+  const handleFullLogout = async () => {
+    await signOutAndWipe('local');
     await refreshGate();
   };
 
   const handleForgotPin = async () => {
-    await deletePinVault();
-    await handleFullLogout();
+    await signOutAndWipe('global');
     pinResetRequestedRef.current = true;
+    await refreshGate();
   };
 
   const storeLocalPin = async (pin: string, pinVersion: number) => {
@@ -283,11 +309,12 @@ const MainNavigator = () => {
         ) : gate === 'pinSetup' ? (
           <PinScreen mode="setup" email={session?.user?.email} onCreate={handlePinCreate} onCancel={handleFullLogout} />
         ) : gate === 'home' && session?.user ? (
-          <HomeScreen session={session} onLogout={handleLogout} onPinLocked={handleFullLogout} />
+          <HomeScreen session={session} onLogout={handleLogout} onPinLocked={handleForgotPin} />
         ) : (
           <LoginScreen onLoginSuccess={refreshGate} />
         )}
       </Animated.View>
+      {curtainVisible && <PrivacyCurtain />}
     </View>
   );
 };

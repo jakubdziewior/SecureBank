@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Animated,
+  Platform,
 } from 'react-native';
 import { supabase } from '../services/supabase';
 import { BankAccount, Transaction, UserProfile } from '../types';
@@ -274,7 +275,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
               onPress={handleSignOut}
               activeOpacity={0.7}
             >
-              <Text style={[styles.logoutText, { color: theme.expense }]}>Wyloguj</Text>
+              <Text style={[styles.logoutText, { color: theme.expense }]}>{Platform.OS === 'web' ? 'Wyloguj' : 'Zablokuj'}</Text>
             </TouchableOpacity>
           </View>
         </View>
