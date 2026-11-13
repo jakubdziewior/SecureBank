@@ -14,8 +14,8 @@ import { supabase } from '../services/supabase';
 import { BankAccount, Transaction, UserProfile } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { SecuritySection } from '../components/SecuritySection';
 import { TransferModal } from '../components/TransferModal';
+import { SettingsModal } from '../components/SettingsModal';
 
 interface HomeScreenProps {
   session: any;
@@ -32,6 +32,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
   const [loading, setLoading] = useState(true);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [transferVisible, setTransferVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   const balanceOpacity = useRef(new Animated.Value(1)).current;
   const balanceScale = useRef(new Animated.Value(1)).current;
@@ -213,7 +214,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
         overScrollMode="never"
       >
         <View style={styles.header}>
-          <View style={styles.userInfoRow}>
+          <TouchableOpacity
+            style={styles.userInfoRow}
+            onPress={() => setSettingsVisible(true)}
+            activeOpacity={0.7}
+          >
             <View
               style={[
                 styles.avatar,
@@ -228,9 +233,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
               </Text>
             </View>
             <View style={styles.nameBlock}>
-              <Text style={[styles.welcomeText, { color: theme.textPrimary }]} numberOfLines={1}>
-                Witaj, {fullName}
-              </Text>
+              <View style={styles.nameHeaderRow}>
+                <Text style={[styles.welcomeText, { color: theme.textPrimary }]} numberOfLines={1}>
+                  Witaj, {fullName}
+                </Text>
+              </View>
               <View style={styles.metaBadgeRow}>
                 <View
                   style={[
@@ -257,9 +264,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
                     </Text>
                   </View>
                 ) : null}
+                <View
+                  style={[
+                    styles.settingsPill,
+                    {
+                      backgroundColor: theme.cardSecondary,
+                      borderColor: theme.cardBorder,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.settingsPillText, { color: theme.textMuted }]}>
+                    Ustawienia ›
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.headerControls}>
             <ThemeToggle />
@@ -275,7 +295,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
               onPress={handleSignOut}
               activeOpacity={0.7}
             >
-              <Text style={[styles.logoutText, { color: theme.expense }]}>{Platform.OS === 'web' ? 'Wyloguj' : 'Zablokuj'}</Text>
+              <Text style={[styles.logoutText, { color: theme.expense }]}>Wyloguj</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -387,8 +407,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
           </TouchableOpacity>
         </View>
 
-        <SecuritySection userEmail={userEmail} onPinLocked={onPinLocked} />
-
         <View
           style={[
             styles.transactionsContainer,
@@ -483,6 +501,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
         onClose={() => setTransferVisible(false)}
         onSubmitted={handleTransferSubmitted}
       />
+
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        profile={profile}
+        account={account}
+        userEmail={userEmail}
+        onPinLocked={onPinLocked}
+        balanceVisible={balanceVisible}
+        onToggleBalancePrivacy={toggleBalancePrivacy}
+      />
     </View>
   );
 };
@@ -493,7 +522,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingTop: 52,
+    paddingTop: Platform.OS === 'ios' ? 64 : 68,
     paddingBottom: 36,
   },
   header: {
@@ -509,9 +538,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     borderWidth: 1.5,
     justifyContent: 'center',
     alignItems: 'center',
@@ -519,11 +548,15 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   nameBlock: {
     justifyContent: 'center',
     flex: 1,
+  },
+  nameHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   welcomeText: {
     fontSize: 17,
@@ -557,6 +590,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  settingsPill: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  settingsPillText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   headerControls: {
     flexDirection: 'row',

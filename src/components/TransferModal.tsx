@@ -13,6 +13,7 @@ import {
   Linking,
   AppState,
   AppStateStatus,
+  Animated,
 } from 'react-native';
 import { CameraView, BarcodeScanningResult } from 'expo-camera';
 import { supabase } from '../services/supabase';
@@ -58,6 +59,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
   const settingsOpenedRef = useRef(false);
   const scannerOpenRef = useRef(false);
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(600)).current;
+
   useEffect(() => {
     scannerOpenRef.current = scannerOpen;
   }, [scannerOpen]);
@@ -69,6 +73,22 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
     setBanner(null);
     setError(null);
     settingsOpenedRef.current = false;
+
+    fadeAnim.setValue(0);
+    slideAnim.setValue(600);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        damping: 24,
+        stiffness: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, [visible]);
 
   useEffect(() => {
@@ -99,6 +119,27 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
       subscription.remove();
     };
   }, [visible]);
+
+  const handleClose = () => {
+    if (scannerOpen) {
+      setScannerOpen(false);
+      return;
+    }
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 600,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      onClose();
+    });
+  };
 
   const openScanner = () => {
     scanHandledRef.current = false;
@@ -205,14 +246,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
     }
   };
 
-  const handleRequestClose = () => {
-    if (scannerOpen) {
-      setScannerOpen(false);
-      return;
-    }
-    onClose();
-  };
-
   const bannerIsInfo = banner === 'scanned';
 
   const renderInput = (
@@ -240,110 +273,123 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
   );
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleRequestClose}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={[styles.sheet, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
-            <Text style={[styles.title, { color: theme.textPrimary }]}>Nowy przelew</Text>
+    <Modal visible={visible} animationType="none" transparent onRequestClose={handleClose}>
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+        <TouchableOpacity style={styles.backdropTouch} activeOpacity={1} onPress={handleClose} />
+        <KeyboardAvoidingView
+          style={styles.sheetContainer}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.cardBorder,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.handleBar} />
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bounces={false}>
+              <Text style={[styles.title, { color: theme.textPrimary }]}>Nowy przelew</Text>
 
-            {scannerOpen ? (
-              <View style={styles.scannerContainer}>
-                <View style={[styles.cameraFrame, { borderColor: theme.primary }]}>
-                  <CameraView
-                    style={styles.camera}
-                    facing="back"
-                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                    onBarcodeScanned={handleBarcodeScanned}
-                    onMountError={handleCameraMountError}
-                  />
-                </View>
-                <Text style={[styles.scannerHint, { color: theme.textSecondary }]}>
-                  Skieruj aparat na kod QR z faktury lub wezwania do zapłaty.
-                </Text>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { borderColor: theme.cardBorder }]}
-                  onPress={() => setScannerOpen(false)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Wpisz dane ręcznie</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={[styles.scanButton, { borderColor: theme.primary, backgroundColor: theme.primarySoft }]}
-                  onPress={handleScanPress}
-                  disabled={checkingCamera || submitting}
-                  activeOpacity={0.7}
-                >
-                  {checkingCamera ? (
-                    <ActivityIndicator color={theme.primary} />
-                  ) : (
-                    <Text style={[styles.scanButtonText, { color: theme.primary }]}>Skanuj kod QR</Text>
-                  )}
-                </TouchableOpacity>
-
-                {banner && (
-                  <View
-                    style={[
-                      styles.banner,
-                      {
-                        backgroundColor: bannerIsInfo ? theme.primarySoft : theme.expenseSoft,
-                        borderColor: bannerIsInfo ? theme.primary : theme.expense,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.bannerMessage, { color: theme.textPrimary }]}>{BANNER_MESSAGES[banner]}</Text>
-                    {banner === 'denied' && (
-                      <TouchableOpacity onPress={handleScanPress} activeOpacity={0.7} style={styles.bannerAction}>
-                        <Text style={[styles.bannerActionText, { color: theme.primary }]}>Spróbuj ponownie</Text>
-                      </TouchableOpacity>
-                    )}
-                    {banner === 'permanentlyDenied' && Platform.OS !== 'web' && (
-                      <TouchableOpacity onPress={handleOpenSettings} activeOpacity={0.7} style={styles.bannerAction}>
-                        <Text style={[styles.bannerActionText, { color: theme.primary }]}>Otwórz ustawienia</Text>
-                      </TouchableOpacity>
-                    )}
+              {scannerOpen ? (
+                <View style={styles.scannerContainer}>
+                  <View style={[styles.cameraFrame, { borderColor: theme.primary }]}>
+                    <CameraView
+                      style={styles.camera}
+                      facing="back"
+                      barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                      onBarcodeScanned={handleBarcodeScanned}
+                      onMountError={handleCameraMountError}
+                    />
                   </View>
-                )}
-
-                {renderInput('Nazwa odbiorcy', 'recipientName', { maxLength: 200 })}
-                {renderInput('Numer rachunku', 'accountNumber', {
-                  placeholder: '00 0000 0000 0000 0000 0000 0000',
-                  keyboardType: 'number-pad',
-                  maxLength: 34,
-                })}
-                {renderInput('Kwota (PLN)', 'amount', { placeholder: '0,00', keyboardType: 'decimal-pad', maxLength: 15 })}
-                {renderInput('Tytuł', 'title', { maxLength: 255 })}
-
-                <View style={styles.statusRow}>
-                  {error && <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>}
+                  <Text style={[styles.scannerHint, { color: theme.textSecondary }]}>
+                    Skieruj aparat na kod QR z faktury lub wezwania do zapłaty.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, { borderColor: theme.cardBorder }]}
+                    onPress={() => setScannerOpen(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Wpisz dane ręcznie</Text>
+                  </TouchableOpacity>
                 </View>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={[styles.scanButton, { borderColor: theme.primary, backgroundColor: theme.primarySoft }]}
+                    onPress={handleScanPress}
+                    disabled={checkingCamera || submitting}
+                    activeOpacity={0.7}
+                  >
+                    {checkingCamera ? (
+                      <ActivityIndicator color={theme.primary} />
+                    ) : (
+                      <Text style={[styles.scanButtonText, { color: theme.primary }]}>Skanuj kod QR</Text>
+                    )}
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.submitButton, { backgroundColor: theme.primary }]}
-                  onPress={handleSubmit}
-                  disabled={submitting}
-                  activeOpacity={0.85}
-                >
-                  {submitting ? (
-                    <ActivityIndicator color={theme.primaryForeground} />
-                  ) : (
-                    <Text style={[styles.submitButtonText, { color: theme.primaryForeground }]}>Zleć przelew</Text>
+                  {banner && (
+                    <View
+                      style={[
+                        styles.banner,
+                        {
+                          backgroundColor: bannerIsInfo ? theme.primarySoft : theme.expenseSoft,
+                          borderColor: bannerIsInfo ? theme.primary : theme.expense,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.bannerMessage, { color: theme.textPrimary }]}>{BANNER_MESSAGES[banner]}</Text>
+                      {banner === 'denied' && (
+                        <TouchableOpacity onPress={handleScanPress} activeOpacity={0.7} style={styles.bannerAction}>
+                          <Text style={[styles.bannerActionText, { color: theme.primary }]}>Spróbuj ponownie</Text>
+                        </TouchableOpacity>
+                      )}
+                      {banner === 'permanentlyDenied' && Platform.OS !== 'web' && (
+                        <TouchableOpacity onPress={handleOpenSettings} activeOpacity={0.7} style={styles.bannerAction}>
+                          <Text style={[styles.bannerActionText, { color: theme.primary }]}>Otwórz ustawienia</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   )}
-                </TouchableOpacity>
-              </>
-            )}
 
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={submitting} activeOpacity={0.7}>
-              <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Anuluj</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+                  {renderInput('Nazwa odbiorcy', 'recipientName', { maxLength: 200 })}
+                  {renderInput('Numer rachunku', 'accountNumber', {
+                    placeholder: '00 0000 0000 0000 0000 0000 0000',
+                    keyboardType: 'number-pad',
+                    maxLength: 34,
+                  })}
+                  {renderInput('Kwota (PLN)', 'amount', { placeholder: '0,00', keyboardType: 'decimal-pad', maxLength: 15 })}
+                  {renderInput('Tytuł', 'title', { maxLength: 255 })}
+
+                  <View style={styles.statusRow}>
+                    {error && <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.submitButton, { backgroundColor: theme.primary }]}
+                    onPress={handleSubmit}
+                    disabled={submitting}
+                    activeOpacity={0.85}
+                  >
+                    {submitting ? (
+                      <ActivityIndicator color={theme.primaryForeground} />
+                    ) : (
+                      <Text style={[styles.submitButtonText, { color: theme.primaryForeground }]}>Zleć przelew</Text>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+
+              <TouchableOpacity style={styles.cancelButton} onPress={handleClose} disabled={submitting} activeOpacity={0.7}>
+                <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Anuluj</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
   );
 };
@@ -352,22 +398,36 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  backdropTouch: {
+    flex: 1,
+  },
+  sheetContainer: {
+    maxHeight: '92%',
   },
   sheet: {
-    maxHeight: '92%',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderWidth: 1,
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    paddingHorizontal: 22,
+    paddingTop: 10,
     paddingBottom: 28,
+    maxHeight: '100%',
+  },
+  handleBar: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#94A3B8',
+    alignSelf: 'center',
+    marginBottom: 12,
   },
   title: {
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   scanButton: {
     borderWidth: 1,
