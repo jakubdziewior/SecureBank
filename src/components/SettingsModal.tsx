@@ -532,7 +532,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
                 <View style={styles.settingText}>
                   <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Numer rachunku (NRB/IBAN)</Text>
-                  <Text style={[styles.settingDesc, { color: theme.textPrimary, fontWeight: '600', letterSpacing: 0.3 }]}>
+                  <Text style={[styles.settingDesc, { color: theme.textPrimary, fontWeight: '600' }]}>
                     {account?.account_number || 'PL 10 1050 0099 ...'}
                   </Text>
                   <Text style={[styles.infoNote, { color: theme.textMuted }]}>
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   sheetTitle: {
     fontSize: 19,
     fontWeight: '800',
-    letterSpacing: 0.2,
+    includeFontPadding: false,
   },
   closeButton: {
     paddingVertical: 4,
@@ -718,15 +718,15 @@ const styles = StyleSheet.create({
   idBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    includeFontPadding: false,
   },
   sectionHeading: {
     fontSize: 11,
     fontWeight: '700',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
     marginBottom: 10,
     marginLeft: 4,
+    includeFontPadding: false,
   },
   settingRow: {
     flexDirection: 'row',
@@ -781,7 +781,7 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     marginTop: 8,
     textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    includeFontPadding: false,
   },
   inputField: {
     height: 44,

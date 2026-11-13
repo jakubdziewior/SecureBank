@@ -860,12 +860,12 @@ const styles = StyleSheet.create({
   logoLetter: {
     fontSize: 28,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    includeFontPadding: false,
   },
   brandTitle: {
     fontSize: 28,
     fontWeight: '800',
-    letterSpacing: 0.4,
+    includeFontPadding: false,
   },
   brandSubtitle: {
     fontSize: 13,
@@ -941,7 +941,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    includeFontPadding: false,
   },
   passwordToggleText: {
     fontSize: 12,
@@ -954,7 +954,6 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     height: 48,
     fontSize: 15,
-    letterSpacing: 0,
     textAlignVertical: 'center',
     includeFontPadding: false,
   },
@@ -974,7 +973,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    includeFontPadding: false,
   },
   footer: {
     marginTop: 32,

@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    includeFontPadding: false,
     marginBottom: 6,
   },
   inputField: {

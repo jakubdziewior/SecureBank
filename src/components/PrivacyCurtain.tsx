@@ -21,6 +21,6 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 28,
     fontWeight: '700',
-    letterSpacing: 1,
+    includeFontPadding: false,
   },
 });

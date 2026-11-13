@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   secret: {
     fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 1,
+    includeFontPadding: false,
     textAlign: 'center',
   },
   copyHint: {

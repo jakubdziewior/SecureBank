@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   clientIdText: {
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    includeFontPadding: false,
   },
   settingsPill: {
     paddingVertical: 2,
@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    includeFontPadding: false,
   },
   privacyToggle: {
     paddingHorizontal: 6,
@@ -650,8 +650,8 @@ const styles = StyleSheet.create({
   balanceText: {
     fontSize: 32,
     fontWeight: '800',
-    letterSpacing: 0.3,
     marginBottom: 16,
+    includeFontPadding: false,
   },
   accountNumberContainer: {
     borderRadius: 10,
@@ -662,13 +662,13 @@ const styles = StyleSheet.create({
   accountNumberLabel: {
     fontSize: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    includeFontPadding: false,
   },
   accountNumberValue: {
     fontSize: 13,
     fontWeight: '600',
     marginTop: 2,
-    letterSpacing: 0.3,
+    includeFontPadding: false,
   },
   summaryRow: {
     flexDirection: 'row',
