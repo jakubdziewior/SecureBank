@@ -17,7 +17,6 @@ import { supabase } from '../services/supabase';
 import { disableTotp, getVerifiedTotpFactorId } from '../services/mfa';
 import { UserProfile, BankAccount } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { ThemeToggle } from './ThemeToggle';
 import { PinChangeModal } from './PinChangeModal';
 import { TotpSetupModal } from './TotpSetupModal';
 
@@ -42,7 +41,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   balanceVisible,
   onToggleBalancePrivacy,
 }) => {
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
 
   const [totpFactorId, setTotpFactorId] = useState<string | null>(null);
   const [totpLoading, setTotpLoading] = useState(true);
@@ -58,11 +57,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(600)).current;
+  const passwordExpandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       loadTotpState();
       setPasswordChangeOpen(false);
+      passwordExpandAnim.setValue(0);
       setPasswordMessage(null);
       setCurrentPassword('');
       setNewPassword('');
@@ -85,6 +86,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       ]).start();
     }
   }, [visible]);
+
+  const togglePasswordChange = () => {
+    if (passwordChangeOpen) {
+      Animated.timing(passwordExpandAnim, {
+        toValue: 0,
+        duration: 240,
+        useNativeDriver: false,
+      }).start(() => {
+        setPasswordChangeOpen(false);
+        setPasswordMessage(null);
+      });
+    } else {
+      setPasswordChangeOpen(true);
+      Animated.timing(passwordExpandAnim, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
 
   const loadTotpState = async () => {
     setTotpLoading(true);
@@ -195,8 +216,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setNewPassword('');
       setConfirmNewPassword('');
       setTimeout(() => {
-        setPasswordChangeOpen(false);
-        setPasswordMessage(null);
+        Animated.timing(passwordExpandAnim, {
+          toValue: 0,
+          duration: 240,
+          useNativeDriver: false,
+        }).start(() => {
+          setPasswordChangeOpen(false);
+          setPasswordMessage(null);
+        });
       }, 2500);
     } catch (err: any) {
       setPasswordMessage({ type: 'error', text: err?.message || 'Nie udało się zmienić hasła.' });
@@ -204,6 +231,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setPasswordLoading(false);
     }
   };
+
+  const passwordFormHeight = passwordExpandAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 480],
+  });
+
+  const passwordFormOpacity = passwordExpandAnim.interpolate({
+    inputRange: [0, 0.25, 1],
+    outputRange: [0, 0.2, 1],
+  });
+
+  const passwordFormTranslateY = passwordExpandAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-12, 0],
+  });
 
   const getUserInitials = (): string => {
     if (profile?.first_name && profile?.last_name) {
@@ -332,7 +374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </View>
                   <TouchableOpacity
                     style={[styles.actionBtn, { borderColor: theme.primary }]}
-                    onPress={() => setPasswordChangeOpen(!passwordChangeOpen)}
+                    onPress={togglePasswordChange}
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.actionBtnText, { color: theme.primary }]}>
@@ -342,58 +384,67 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </View>
 
                 {passwordChangeOpen && (
-                  <View style={[styles.passwordForm, { borderTopColor: theme.cardBorder }]}>
-                    <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Obecne hasło</Text>
-                    <TextInput
-                      style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
-                      placeholder="Wprowadź obecne hasło"
-                      placeholderTextColor={theme.textMuted}
-                      secureTextEntry
-                      value={currentPassword}
-                      onChangeText={setCurrentPassword}
-                    />
+                  <Animated.View
+                    style={{
+                      maxHeight: passwordFormHeight,
+                      opacity: passwordFormOpacity,
+                      transform: [{ translateY: passwordFormTranslateY }],
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View style={[styles.passwordForm, { borderTopColor: theme.cardBorder }]}>
+                      <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Obecne hasło</Text>
+                      <TextInput
+                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        placeholder="Wprowadź obecne hasło"
+                        placeholderTextColor={theme.textMuted}
+                        secureTextEntry
+                        value={currentPassword}
+                        onChangeText={setCurrentPassword}
+                      />
 
-                    <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Nowe hasło (min. 8 znaków)</Text>
-                    <TextInput
-                      style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
-                      placeholder="Minimum 8 znaków"
-                      placeholderTextColor={theme.textMuted}
-                      secureTextEntry
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                    />
+                      <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Nowe hasło (min. 8 znaków)</Text>
+                      <TextInput
+                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        placeholder="Minimum 8 znaków"
+                        placeholderTextColor={theme.textMuted}
+                        secureTextEntry
+                        value={newPassword}
+                        onChangeText={setNewPassword}
+                      />
 
-                    <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Powtórz nowe hasło</Text>
-                    <TextInput
-                      style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
-                      placeholder="Powtórz nowe hasło"
-                      placeholderTextColor={theme.textMuted}
-                      secureTextEntry
-                      value={confirmNewPassword}
-                      onChangeText={setConfirmNewPassword}
-                    />
+                      <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Powtórz nowe hasło</Text>
+                      <TextInput
+                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        placeholder="Powtórz nowe hasło"
+                        placeholderTextColor={theme.textMuted}
+                        secureTextEntry
+                        value={confirmNewPassword}
+                        onChangeText={setConfirmNewPassword}
+                      />
 
-                    {passwordMessage && (
-                      <View style={[styles.statusBox, { backgroundColor: passwordMessage.type === 'error' ? theme.expenseSoft : theme.incomeSoft, borderColor: passwordMessage.type === 'error' ? theme.expense : theme.income }]}>
-                        <Text style={[styles.statusText, { color: passwordMessage.type === 'error' ? theme.expense : theme.income }]}>
-                          {passwordMessage.text}
-                        </Text>
-                      </View>
-                    )}
-
-                    <TouchableOpacity
-                      style={[styles.submitPasswordBtn, { backgroundColor: theme.primary }]}
-                      onPress={handlePasswordChangeSubmit}
-                      disabled={passwordLoading}
-                      activeOpacity={0.85}
-                    >
-                      {passwordLoading ? (
-                        <ActivityIndicator color={theme.primaryForeground} />
-                      ) : (
-                        <Text style={[styles.submitPasswordBtnText, { color: theme.primaryForeground }]}>Zatwierdź nowe hasło</Text>
+                      {passwordMessage && (
+                        <View style={[styles.statusBox, { backgroundColor: passwordMessage.type === 'error' ? theme.expenseSoft : theme.incomeSoft, borderColor: passwordMessage.type === 'error' ? theme.expense : theme.income }]}>
+                          <Text style={[styles.statusText, { color: passwordMessage.type === 'error' ? theme.expense : theme.income }]}>
+                            {passwordMessage.text}
+                          </Text>
+                        </View>
                       )}
-                    </TouchableOpacity>
-                  </View>
+
+                      <TouchableOpacity
+                        style={[styles.submitPasswordBtn, { backgroundColor: theme.primary }]}
+                        onPress={handlePasswordChangeSubmit}
+                        disabled={passwordLoading}
+                        activeOpacity={0.85}
+                      >
+                        {passwordLoading ? (
+                          <ActivityIndicator color={theme.primaryForeground} />
+                        ) : (
+                          <Text style={[styles.submitPasswordBtnText, { color: theme.primaryForeground }]}>Zatwierdź nowe hasło</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </Animated.View>
                 )}
               </View>
 
@@ -433,16 +484,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </View>
 
               <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Preferencje interfejsu</Text>
-
-              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Motyw graficzny</Text>
-                  <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
-                    {isDark ? 'Ciemny' : 'Jasny'}
-                  </Text>
-                </View>
-                <ThemeToggle />
-              </View>
 
               <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
                 <View style={styles.settingText}>

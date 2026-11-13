@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import {
   TotpEnrollment,
@@ -39,6 +40,9 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(600)).current;
+
   useEffect(() => {
     if (!visible) return;
     setEnrollment(null);
@@ -46,11 +50,45 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
     setError(null);
     setInfo(null);
     setLoading(true);
+
+    fadeAnim.setValue(0);
+    slideAnim.setValue(600);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        damping: 24,
+        stiffness: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
     startTotpEnrollment()
       .then(setEnrollment)
       .catch((e) => setError(e?.message || 'Nie udało się rozpocząć konfiguracji.'))
       .finally(() => setLoading(false));
   }, [visible]);
+
+  const animateClose = (callback: () => void) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 600,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      callback();
+    });
+  };
 
   useEffect(() => {
     if (!visible) {
@@ -87,7 +125,7 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
     setError(null);
     try {
       await verifyTotpCode(enrollment.factorId, code);
-      onEnabled();
+      animateClose(onEnabled);
     } catch (e: any) {
       setError(e?.message || 'Weryfikacja nie powiodła się.');
       setCode('');
@@ -97,95 +135,117 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.backdrop}
-      >
-        <View style={[styles.sheet, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.title, { color: theme.textPrimary }]}>Google Authenticator</Text>
+    <Modal visible={visible} animationType="none" transparent onRequestClose={() => { if (!loading) animateClose(onClose); }}>
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+        <TouchableOpacity
+          style={styles.backdropTouch}
+          activeOpacity={1}
+          onPress={() => !loading && animateClose(onClose)}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.sheetContainer}
+        >
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                backgroundColor: theme.card,
+                borderColor: theme.cardBorder,
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.handleBar} />
+            <Text style={[styles.title, { color: theme.textPrimary }]}>Google Authenticator</Text>
 
-          {!enrollment ? (
-            <View style={styles.loaderBox}>
-              {loading ? (
-                <ActivityIndicator color={theme.primary} />
-              ) : (
-                <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>
-              )}
-            </View>
-          ) : (
-            <>
-              <Text style={[styles.step, { color: theme.textSecondary }]}>
-                1. Dodaj konto SecureBank w Google Authenticator.
-              </Text>
-              <TouchableOpacity
-                style={[styles.secondaryButton, { borderColor: theme.primary }]}
-                onPress={handleOpenAuthenticator}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.secondaryButtonText, { color: theme.primary }]}>
-                  Otwórz Google Authenticator
-                </Text>
-              </TouchableOpacity>
-
-              <Text style={[styles.hint, { color: theme.textMuted }]}>Lub wpisz klucz ręcznie:</Text>
-              <TouchableOpacity
-                style={[styles.secretBox, { backgroundColor: theme.cardSecondary, borderColor: theme.cardBorder }]}
-                onPress={handleCopySecret}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.secret, { color: theme.textPrimary }]}>{formatSecret(enrollment.secret)}</Text>
-                <Text style={[styles.copyHint, { color: theme.primary }]}>Dotknij, aby skopiować</Text>
-              </TouchableOpacity>
-
-              {info && <Text style={[styles.info, { color: theme.textSecondary }]}>{info}</Text>}
-
-              <Text style={[styles.step, { color: theme.textSecondary }]}>2. Wpisz kod wyświetlony w aplikacji.</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: theme.inputBg,
-                    borderColor: error ? theme.expense : theme.inputBorder,
-                    color: theme.textPrimary,
-                  },
-                ]}
-                value={code}
-                onChangeText={(text) => {
-                  setCode(text.replace(/\D/g, '').slice(0, 6));
-                  if (error) setError(null);
-                }}
-                keyboardType="number-pad"
-                textContentType="oneTimeCode"
-                maxLength={6}
-                placeholder="000000"
-                placeholderTextColor={theme.textMuted}
-              />
-
-              {error && <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>}
-
-              <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-                onPress={handleConfirm}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
+            {!enrollment ? (
+              <View style={styles.loaderBox}>
                 {loading ? (
-                  <ActivityIndicator color={theme.primaryForeground} />
+                  <ActivityIndicator color={theme.primary} />
                 ) : (
-                  <Text style={[styles.primaryButtonText, { color: theme.primaryForeground }]}>
-                    Włącz weryfikację dwuetapową
-                  </Text>
+                  <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>
                 )}
-              </TouchableOpacity>
-            </>
-          )}
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.step, { color: theme.textSecondary }]}>
+                  1. Dodaj konto SecureBank w Google Authenticator.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.secondaryButton, { borderColor: theme.primary }]}
+                  onPress={handleOpenAuthenticator}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.secondaryButtonText, { color: theme.primary }]}>
+                    Otwórz Google Authenticator
+                  </Text>
+                </TouchableOpacity>
 
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={loading} activeOpacity={0.7}>
-            <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Anuluj</Text>
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+                <Text style={[styles.hint, { color: theme.textMuted }]}>Lub wpisz klucz ręcznie:</Text>
+                <TouchableOpacity
+                  style={[styles.secretBox, { backgroundColor: theme.cardSecondary, borderColor: theme.cardBorder }]}
+                  onPress={handleCopySecret}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.secret, { color: theme.textPrimary }]}>{formatSecret(enrollment.secret)}</Text>
+                  <Text style={[styles.copyHint, { color: theme.primary }]}>Dotknij, aby skopiować</Text>
+                </TouchableOpacity>
+
+                {info && <Text style={[styles.info, { color: theme.textSecondary }]}>{info}</Text>}
+
+                <Text style={[styles.step, { color: theme.textSecondary }]}>2. Wpisz kod wyświetlony w aplikacji.</Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: theme.inputBg,
+                      borderColor: error ? theme.expense : theme.inputBorder,
+                      color: theme.textPrimary,
+                    },
+                  ]}
+                  value={code}
+                  onChangeText={(text) => {
+                    setCode(text.replace(/\D/g, '').slice(0, 6));
+                    if (error) setError(null);
+                  }}
+                  keyboardType="number-pad"
+                  textContentType="oneTimeCode"
+                  maxLength={6}
+                  placeholder="000000"
+                  placeholderTextColor={theme.textMuted}
+                />
+
+                {error && <Text style={[styles.error, { color: theme.expense }]}>{error}</Text>}
+
+                <TouchableOpacity
+                  style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+                  onPress={handleConfirm}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={theme.primaryForeground} />
+                  ) : (
+                    <Text style={[styles.primaryButtonText, { color: theme.primaryForeground }]}>
+                      Włącz weryfikację dwuetapową
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => animateClose(onClose)}
+              disabled={loading}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Anuluj</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </Animated.View>
     </Modal>
   );
 };
@@ -194,14 +254,30 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  backdropTouch: {
+    flex: 1,
+  },
+  sheetContainer: {
+    width: '100%',
+    justifyContent: 'flex-end',
   },
   sheet: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
     padding: 22,
+    paddingTop: 16,
     paddingBottom: 36,
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128, 128, 128, 0.35)',
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   title: {
     fontSize: 18,

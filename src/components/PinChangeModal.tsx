@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Modal, Animated } from 'react-native';
 import { PinPad } from './PinPad';
 import { PIN_LENGTH, isSessionUnlocked, rewrapPin } from '../services/pin';
 import { setAccountPin } from '../services/accountPin';
@@ -30,6 +30,9 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(600)).current;
+
   useEffect(() => {
     if (!visible) return;
     setStep('current');
@@ -37,7 +40,40 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
     setCurrentPin('');
     setNewPin('');
     setError(null);
+
+    fadeAnim.setValue(0);
+    slideAnim.setValue(600);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        damping: 24,
+        stiffness: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, [visible]);
+
+  const animateClose = (callback: () => void) => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 600,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      callback();
+    });
+  };
 
   useEffect(() => {
     if (pin.length === PIN_LENGTH) {
@@ -79,11 +115,11 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
         if (isSessionUnlocked()) {
           await rewrapPin(newPin, result.version);
         }
-        onChanged();
+        animateClose(onChanged);
         return;
       }
       if (result.reset) {
-        onLocked();
+        animateClose(onLocked);
         return;
       }
       setError(result.message);
@@ -98,9 +134,24 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.sheet, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
+    <Modal visible={visible} animationType="none" transparent onRequestClose={() => { if (!busy) animateClose(onClose); }}>
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+        <TouchableOpacity
+          style={styles.backdropTouch}
+          activeOpacity={1}
+          onPress={() => !busy && animateClose(onClose)}
+        />
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.cardBorder,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.handleBar} />
           <Text style={[styles.title, { color: theme.textPrimary }]}>{STEP_TITLES[step]}</Text>
           <View style={styles.statusRow}>
             {busy ? (
@@ -112,11 +163,16 @@ export const PinChangeModal: React.FC<PinChangeModalProps> = ({ visible, onClose
 
           <PinPad length={PIN_LENGTH} value={pin} onChange={setPin} disabled={busy} error={!!error && pin.length === 0} />
 
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={busy} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.cancelButton}
+            onPress={() => animateClose(onClose)}
+            disabled={busy}
+            activeOpacity={0.7}
+          >
             <Text style={[styles.cancelText, { color: theme.textSecondary }]}>Anuluj</Text>
           </TouchableOpacity>
-        </View>
-      </View>
+        </Animated.View>
+      </Animated.View>
     </Modal>
   );
 };
@@ -125,15 +181,26 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  backdropTouch: {
+    flex: 1,
   },
   sheet: {
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 28,
-    paddingTop: 24,
+    paddingTop: 16,
     paddingBottom: 36,
+  },
+  handleBar: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128, 128, 128, 0.35)',
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   title: {
     fontSize: 18,
