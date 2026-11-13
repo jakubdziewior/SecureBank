@@ -19,6 +19,11 @@ import { UserProfile, BankAccount } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { PinChangeModal } from './PinChangeModal';
 import { TotpSetupModal } from './TotpSetupModal';
+import {
+  verifySupabaseTlsChannel,
+  simulateMitmInterceptionTest,
+  getNetworkSecuritySummary,
+} from '../services/certificatePinning';
 
 interface SettingsModalProps {
   visible: boolean;
@@ -54,6 +59,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [pinningTesting, setPinningTesting] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(600)).current;
@@ -162,6 +168,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setPinChangeVisible(false);
     handleClose();
     onPinLocked();
+  };
+
+  const handleCheckPinning = async () => {
+    setPinningTesting(true);
+    try {
+      const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+      const anonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key').trim();
+      const check = await verifySupabaseTlsChannel(rawUrl, anonKey);
+
+      Alert.alert(
+        'Weryfikacja kanału TLS',
+        `Status Certificate Pinning: ${check.success ? 'POZYTYWNY' : 'BŁĄD'}\n` +
+          `Domena: ${check.domain}\n` +
+          `Przypięte klucze SPKI: ${check.pins.length} (Leaf, WE1, GTS Root R4)\n` +
+          `Czas handshake: ${check.latencyMs} ms\n` +
+          `Reguła NSC Android: cleartextTrafficPermitted=false, CA=system\n\n` +
+          `${check.message}`
+      );
+    } catch (e: any) {
+      Alert.alert('Błąd TLS', e?.message || 'Nie udało się zweryfikować połączenia.');
+    } finally {
+      setPinningTesting(false);
+    }
+  };
+
+  const handleSimulateMitm = async () => {
+    const sim = await simulateMitmInterceptionTest();
+    Alert.alert(
+      'Test odporności na MitM / Proxy',
+      `Wynik symulacji ataku Man-in-the-Middle:\n` +
+        `Połączenie zablokowane: ${sim.blocked ? 'TAK' : 'NIE'}\n` +
+        `Wyjątek: ${sim.exceptionName}\n\n` +
+        `${sim.errorMessage}`
+    );
   };
 
   const handlePasswordChangeSubmit = async () => {
@@ -446,6 +486,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </View>
                   </Animated.View>
                 )}
+              </View>
+
+              <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Bezpieczeństwo sieciowe i TLS</Text>
+
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Przypinanie certyfikatów (Pinning)</Text>
+                  <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
+                    SPKI SHA-256 dla *.supabase.co (Leaf, WE1, GTS Root R4)
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { borderColor: theme.primary }]}
+                  onPress={handleCheckPinning}
+                  disabled={pinningTesting}
+                  activeOpacity={0.7}
+                >
+                  {pinningTesting ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <Text style={[styles.actionBtnText, { color: theme.primary }]}>Sprawdź</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Android Network Security Config</Text>
+                  <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
+                    Tylko CA systemowe · Blokada certyfikatów użytkownika i HTTP
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { borderColor: theme.cardBorder }]}
+                  onPress={handleSimulateMitm}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.primary }]}>Test MitM</Text>
+                </TouchableOpacity>
               </View>
 
               <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Dane rachunku i tożsamości</Text>

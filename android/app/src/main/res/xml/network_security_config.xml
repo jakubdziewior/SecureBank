@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Konfiguracja bazowa: blokada nieszyfrowanego HTTP i zaufanie tylko do certyfikatow systemowych -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Przypinanie kluczy publicznych (Certificate Pinning) dla domeny Supabase -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">supabase.co</domain>
+        <pin-set expiration="2027-12-31">
+            <!-- Leaf SPKI Pin (*.supabase.co) -->
+            <pin digest="SHA-256">B9zUXavotYYIs217h2OZnCqCTp2vB/2pNC1zDijcIAo=</pin>
+            <!-- Intermediate SPKI Pin (Google Trust Services WE1) -->
+            <pin digest="SHA-256">kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=</pin>
+            <!-- Root CA SPKI Pin (Google Trust Services GTS Root R4) -->
+            <pin digest="SHA-256">mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=</pin>
+        </pin-set>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

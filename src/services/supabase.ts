@@ -2,6 +2,13 @@ import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { decryptWithSessionKey, encryptWithSessionKey, isEncryptedValue } from './pin';
+import {
+  securePinnedFetch,
+  verifySupabaseTlsChannel,
+  AUTHORIZED_SPKI_PINS,
+  SSLHandshakeException,
+  getNetworkSecuritySummary,
+} from './certificatePinning';
 
 const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder-project.supabase.co';
 const SUPABASE_URL = rawUrl.trim().replace(/\/+$/, '');
@@ -128,16 +135,6 @@ const SecureStoreAdapter = {
   },
 };
 
-const secureFetch: typeof fetch = (input, init) => {
-  const headers = new Headers(init?.headers);
-  headers.set('Cache-Control', 'no-store');
-  headers.set('Pragma', 'no-cache');
-  return fetch(input, {
-    ...init,
-    headers,
-  });
-};
-
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: SecureStoreAdapter,
@@ -151,7 +148,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
     },
-    fetch: secureFetch,
+    fetch: securePinnedFetch,
   },
 });
 
@@ -192,6 +189,8 @@ export const checkSupabaseConnection = async (): Promise<{
   url: string;
   isConfigured: boolean;
   message: string;
+  pinningActive: boolean;
+  spkiPinsCount: number;
 }> => {
   const isConfigured =
     SUPABASE_URL !== 'https://placeholder-project.supabase.co' &&
@@ -203,32 +202,20 @@ export const checkSupabaseConnection = async (): Promise<{
       url: SUPABASE_URL,
       isConfigured: false,
       message: 'Brak konfiguracji połączenia w zmiennych środowiskowych.',
+      pinningActive: true,
+      spkiPinsCount: AUTHORIZED_SPKI_PINS.length,
     };
   }
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/health`, {
-      method: 'GET',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        'Cache-Control': 'no-store',
-        Pragma: 'no-cache',
-      },
-    });
-
-    if (response.ok) {
-      return {
-        connected: true,
-        url: SUPABASE_URL,
-        isConfigured: true,
-        message: 'Połączono z usługą autoryzacji.',
-      };
-    }
+    const result = await verifySupabaseTlsChannel(SUPABASE_URL, SUPABASE_ANON_KEY);
     return {
-      connected: false,
+      connected: result.success,
       url: SUPABASE_URL,
       isConfigured: true,
-      message: `Status serwera: ${response.status}`,
+      message: result.message,
+      pinningActive: true,
+      spkiPinsCount: result.pins.length,
     };
   } catch (error: any) {
     return {
@@ -236,6 +223,10 @@ export const checkSupabaseConnection = async (): Promise<{
       url: SUPABASE_URL,
       isConfigured: true,
       message: error?.message || 'Brak łączności sieciowej.',
+      pinningActive: true,
+      spkiPinsCount: AUTHORIZED_SPKI_PINS.length,
     };
   }
 };
+
+export { getNetworkSecuritySummary, SSLHandshakeException };
