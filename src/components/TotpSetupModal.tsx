@@ -202,6 +202,7 @@ export const TotpSetupModal: React.FC<TotpSetupModalProps> = ({ accountName, vis
                       backgroundColor: theme.inputBg,
                       borderColor: error ? theme.expense : theme.inputBorder,
                       color: theme.textPrimary,
+                      letterSpacing: code.length > 0 ? 6 : 0,
                     },
                   ]}
                   value={code}
@@ -331,7 +332,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 22,
     fontWeight: '700',
-    letterSpacing: 6,
+    letterSpacing: 0,
+    includeFontPadding: false,
     textAlign: 'center',
   },
   error: {

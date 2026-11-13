@@ -258,7 +258,12 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
       <TextInput
         style={[
           styles.inputField,
-          { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary },
+          {
+            backgroundColor: theme.inputBg,
+            borderColor: theme.inputBorder,
+            color: theme.textPrimary,
+            letterSpacing: 0,
+          },
         ]}
         value={draft[field]}
         onChangeText={updateField(field)}
@@ -505,6 +510,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 12,
     fontSize: 14,
+    letterSpacing: 0,
+    includeFontPadding: false,
   },
   statusRow: {
     minHeight: 24,

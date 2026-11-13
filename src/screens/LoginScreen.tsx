@@ -705,6 +705,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     backgroundColor: theme.inputBg,
                     borderColor: passwordError ? theme.expense : theme.inputBorder,
                     color: theme.textPrimary,
+                    letterSpacing: 0,
                   },
                 ]}
                 placeholder="Minimum 8 znaków"
@@ -748,6 +749,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                         ? theme.expense
                         : theme.inputBorder,
                       color: theme.textPrimary,
+                      letterSpacing: 0,
                     },
                   ]}
                   placeholder="Powtórz hasło dostępowe"
@@ -954,6 +956,7 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     height: 48,
     fontSize: 15,
+    letterSpacing: 0,
     textAlignVertical: 'center',
     includeFontPadding: false,
   },

@@ -61,6 +61,7 @@ export const MfaVerifyScreen: React.FC<MfaVerifyScreenProps> = ({ email, onVerif
               backgroundColor: theme.inputBg,
               borderColor: error ? theme.expense : theme.inputBorder,
               color: theme.textPrimary,
+              letterSpacing: code.length > 0 ? 8 : 0,
             },
           ]}
           value={code}
@@ -129,7 +130,8 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 26,
     fontWeight: '700',
-    letterSpacing: 8,
+    letterSpacing: 0,
+    includeFontPadding: false,
     textAlign: 'center',
   },
   error: {

@@ -435,30 +435,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <View style={[styles.passwordForm, { borderTopColor: theme.cardBorder }]}>
                       <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Obecne hasło</Text>
                       <TextInput
-                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        style={[
+                          styles.inputField,
+                          {
+                            backgroundColor: theme.inputBg,
+                            borderColor: theme.inputBorder,
+                            color: theme.textPrimary,
+                            letterSpacing: 0,
+                          },
+                        ]}
                         placeholder="Wprowadź obecne hasło"
                         placeholderTextColor={theme.textMuted}
                         secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         value={currentPassword}
                         onChangeText={setCurrentPassword}
                       />
 
                       <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Nowe hasło (min. 8 znaków)</Text>
                       <TextInput
-                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        style={[
+                          styles.inputField,
+                          {
+                            backgroundColor: theme.inputBg,
+                            borderColor: theme.inputBorder,
+                            color: theme.textPrimary,
+                            letterSpacing: 0,
+                          },
+                        ]}
                         placeholder="Minimum 8 znaków"
                         placeholderTextColor={theme.textMuted}
                         secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         value={newPassword}
                         onChangeText={setNewPassword}
                       />
 
                       <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Powtórz nowe hasło</Text>
                       <TextInput
-                        style={[styles.inputField, { backgroundColor: theme.inputBg, borderColor: theme.inputBorder, color: theme.textPrimary }]}
+                        style={[
+                          styles.inputField,
+                          {
+                            backgroundColor: theme.inputBg,
+                            borderColor: theme.inputBorder,
+                            color: theme.textPrimary,
+                            letterSpacing: 0,
+                          },
+                        ]}
                         placeholder="Powtórz nowe hasło"
                         placeholderTextColor={theme.textMuted}
                         secureTextEntry
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         value={confirmNewPassword}
                         onChangeText={setConfirmNewPassword}
                       />
@@ -789,6 +819,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 12,
     fontSize: 14,
+    letterSpacing: 0,
+    includeFontPadding: false,
   },
   statusBox: {
     padding: 10,
