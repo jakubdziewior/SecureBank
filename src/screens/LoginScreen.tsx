@@ -752,7 +752,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       letterSpacing: 0,
                     },
                   ]}
-                  placeholder="Powtórz hasło dostępowe"
+                  placeholder="Powtórz hasło"
                   placeholderTextColor={theme.textMuted}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"

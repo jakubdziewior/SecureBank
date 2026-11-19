@@ -20,10 +20,11 @@ import { SettingsModal } from '../components/SettingsModal';
 interface HomeScreenProps {
   session: any;
   onLogout: () => void;
+  onFullLogout: () => void;
   onPinLocked: () => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPinLocked }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFullLogout, onPinLocked }) => {
   const { theme, isDark } = useTheme();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -295,7 +296,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
               onPress={handleSignOut}
               activeOpacity={0.7}
             >
-              <Text style={[styles.logoutText, { color: theme.expense }]}>Wyloguj</Text>
+              <Text style={[styles.logoutText, { color: theme.expense }]}>
+                {Platform.OS === 'web' ? 'Wyloguj' : 'Zablokuj'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -509,6 +512,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onPin
         account={account}
         userEmail={userEmail}
         onPinLocked={onPinLocked}
+        onFullLogout={onFullLogout}
+        onDailyLimitChanged={(limit) => setAccount((prev) => (prev ? { ...prev, daily_limit: limit } : prev))}
         balanceVisible={balanceVisible}
         onToggleBalancePrivacy={toggleBalancePrivacy}
       />

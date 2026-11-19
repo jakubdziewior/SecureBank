@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { supabase } from '../services/supabase';
 import { disableTotp, getVerifiedTotpFactorId } from '../services/mfa';
+import { DAILY_LIMIT_OPTIONS, DailyLimitOption, formatLimit, setDailyLimit } from '../services/accountLimits';
 import { UserProfile, BankAccount } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { PinChangeModal } from './PinChangeModal';
@@ -32,6 +33,8 @@ interface SettingsModalProps {
   account: BankAccount | null;
   userEmail: string;
   onPinLocked: () => void;
+  onFullLogout: () => void;
+  onDailyLimitChanged: (limit: number) => void;
   balanceVisible: boolean;
   onToggleBalancePrivacy: () => void;
 }
@@ -43,6 +46,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   account,
   userEmail,
   onPinLocked,
+  onFullLogout,
+  onDailyLimitChanged,
   balanceVisible,
   onToggleBalancePrivacy,
 }) => {
@@ -60,10 +65,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const [pinningTesting, setPinningTesting] = useState(false);
+  const [limitPickerOpen, setLimitPickerOpen] = useState(false);
+  const [limitSaving, setLimitSaving] = useState<number | null>(null);
+  const [limitMessage, setLimitMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(600)).current;
   const passwordExpandAnim = useRef(new Animated.Value(0)).current;
+  const limitExpandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
@@ -74,6 +83,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCurrentPassword('');
       setNewPassword('');
       setConfirmNewPassword('');
+      setLimitPickerOpen(false);
+      limitExpandAnim.setValue(0);
+      setLimitMessage(null);
+      setLimitSaving(null);
 
       fadeAnim.setValue(0);
       slideAnim.setValue(600);
@@ -113,6 +126,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const currentDailyLimit = Number(account?.daily_limit ?? 5000);
+
+  const toggleLimitPicker = () => {
+    if (limitPickerOpen) {
+      Animated.timing(limitExpandAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: false,
+      }).start(() => {
+        setLimitPickerOpen(false);
+        setLimitMessage(null);
+      });
+    } else {
+      setLimitMessage(null);
+      setLimitPickerOpen(true);
+      Animated.timing(limitExpandAnim, {
+        toValue: 1,
+        duration: 260,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
+  const applyDailyLimit = async (limit: DailyLimitOption) => {
+    setLimitSaving(limit);
+    setLimitMessage(null);
+    try {
+      const saved = await setDailyLimit(limit);
+      onDailyLimitChanged(saved);
+      setLimitMessage({ type: 'success', text: `Nowy limit dzienny: ${formatLimit(saved)}.` });
+    } catch (e: any) {
+      setLimitMessage({ type: 'error', text: e?.message || 'Nie udało się zmienić limitu.' });
+    } finally {
+      setLimitSaving(null);
+    }
+  };
+
+  const handleSelectLimit = (limit: DailyLimitOption) => {
+    if (limitSaving !== null || limit === currentDailyLimit) return;
+    if (limit > currentDailyLimit && Platform.OS !== 'web') {
+      Alert.alert(
+        'Podwyższenie limitu',
+        `Czy na pewno chcesz podwyższyć dzienny limit operacji do ${formatLimit(limit)}?`,
+        [
+          { text: 'Anuluj', style: 'cancel' },
+          { text: 'Podwyższ', onPress: () => applyDailyLimit(limit) },
+        ]
+      );
+      return;
+    }
+    applyDailyLimit(limit);
+  };
+
   const loadTotpState = async () => {
     setTotpLoading(true);
     try {
@@ -140,6 +206,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     ]).start(() => {
       onClose();
     });
+  };
+
+  const handleFullLogout = () => {
+    if (Platform.OS === 'web') {
+      onClose();
+      onFullLogout();
+      return;
+    }
+    Alert.alert(
+      'Wyloguj z tego urządzenia',
+      'Sesja zostanie unieważniona na serwerze, a PIN i dane logowania usunięte z telefonu. Przy następnym uruchomieniu zalogujesz się hasłem.',
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        {
+          text: 'Wyloguj',
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            onFullLogout();
+          },
+        },
+      ]
+    );
   };
 
   const handleTotpEnabled = () => {
@@ -316,8 +405,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               },
             ]}
           >
-            <View style={styles.handleBar} />
-
             <View style={styles.sheetHeader}>
               <Text style={[styles.sheetTitle, { color: theme.textPrimary }]}>Ustawienia i Profil</Text>
               <TouchableOpacity onPress={handleClose} style={styles.closeButton} activeOpacity={0.7}>
@@ -583,13 +670,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </View>
               </View>
 
-              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
-                <View style={styles.settingText}>
-                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Dzienny limit operacji</Text>
-                  <Text style={[styles.settingDesc, { color: theme.textPrimary, fontWeight: '600' }]}>
-                    {account?.daily_limit ? `${account.daily_limit.toLocaleString('pl-PL')} PLN` : '5 000,00 PLN'}
-                  </Text>
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Dzienny limit operacji</Text>
+                    <Text style={[styles.settingDesc, { color: theme.textPrimary, fontWeight: '600' }]}>
+                      {formatLimit(currentDailyLimit)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, { borderColor: theme.primary }]}
+                    onPress={toggleLimitPicker}
+                    disabled={limitSaving !== null}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.actionBtnText, { color: theme.primary }]}>
+                      {limitPickerOpen ? 'Zwiń' : 'Zmień'}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
+
+                {limitPickerOpen && (
+                  <Animated.View
+                    style={[
+                      styles.limitPicker,
+                      {
+                        borderTopColor: theme.cardBorder,
+                        opacity: limitExpandAnim,
+                        maxHeight: limitExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 460] }),
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.inputLabel, { color: theme.textMuted }]}>Wybierz nowy limit</Text>
+                    {DAILY_LIMIT_OPTIONS.map((option) => {
+                      const selected = option === currentDailyLimit;
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          style={[
+                            styles.limitOption,
+                            {
+                              borderColor: selected ? theme.primary : theme.cardBorder,
+                              backgroundColor: selected ? theme.card : 'transparent',
+                            },
+                          ]}
+                          onPress={() => handleSelectLimit(option)}
+                          disabled={limitSaving !== null}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.limitOptionText, { color: selected ? theme.primary : theme.textPrimary }]}>
+                            {formatLimit(option)}
+                          </Text>
+                          {option === limitSaving ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                          ) : selected ? (
+                            <Text style={[styles.limitOptionBadge, { color: theme.primary }]}>Aktualny</Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {limitMessage && (
+                      <Text
+                        style={[
+                          styles.limitMessage,
+                          { color: limitMessage.type === 'error' ? theme.expense : theme.income },
+                        ]}
+                      >
+                        {limitMessage.text}
+                      </Text>
+                    )}
+                  </Animated.View>
+                )}
               </View>
 
               <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Preferencje interfejsu</Text>
@@ -609,6 +760,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <Text style={[styles.actionBtnText, { color: theme.primary }]}>
                     {balanceVisible ? 'Ukryj' : 'Odkryj'}
                   </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Sesja</Text>
+
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Wyloguj z tego urządzenia</Text>
+                  <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
+                    Unieważnia sesję i usuwa PIN z telefonu
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { borderColor: theme.expense }]}
+                  onPress={handleFullLogout}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.expense }]}>Wyloguj</Text>
                 </TouchableOpacity>
               </View>
 
@@ -659,14 +828,6 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 24,
     maxHeight: '100%',
-  },
-  handleBar: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#94A3B8',
-    alignSelf: 'center',
-    marginBottom: 12,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -799,6 +960,36 @@ const styles = StyleSheet.create({
   actionBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  limitPicker: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    overflow: 'hidden',
+  },
+  limitOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  limitOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  limitOptionBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  limitMessage: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 10,
   },
   passwordForm: {
     marginTop: 14,

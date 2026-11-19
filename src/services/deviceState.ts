@@ -22,13 +22,22 @@ export const wipeLocalSessionData = async (): Promise<void> => {
   await clearAppCache();
 };
 
-export const ensureFreshInstallState = async (): Promise<void> => {
+let freshInstallCheck: Promise<void> | null = null;
+
+const runFreshInstallCheck = async (): Promise<void> => {
   if (Platform.OS === 'web') return;
   try {
     const flag = new File(Paths.document, INSTALL_FLAG_NAME);
     if (flag.exists) return;
     await wipeLocalSessionData();
-    flag.create();
-    await flag.write('1');
+    flag.create({ overwrite: true });
+    flag.write('1');
   } catch {}
+};
+
+export const ensureFreshInstallState = (): Promise<void> => {
+  if (!freshInstallCheck) {
+    freshInstallCheck = runFreshInstallCheck();
+  }
+  return freshInstallCheck;
 };

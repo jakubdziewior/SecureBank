@@ -303,3 +303,40 @@ REVOKE ALL ON FUNCTION public.recent_password_login(INT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.pin_status() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.verify_pin(TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.set_pin(TEXT, TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.set_daily_limit(new_limit NUMERIC)
+RETURNS NUMERIC AS $$
+DECLARE
+    previous_limit NUMERIC;
+BEGIN
+    IF auth.uid() IS NULL OR NOT public.mfa_satisfied() THEN
+        RAISE EXCEPTION 'not_authorized';
+    END IF;
+    IF new_limit IS NULL OR new_limit NOT IN (500, 1000, 2000, 5000, 10000, 20000, 50000) THEN
+        RAISE EXCEPTION 'invalid_daily_limit';
+    END IF;
+
+    SELECT daily_limit INTO previous_limit
+    FROM public.accounts
+    WHERE user_id = auth.uid()
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'account_not_found';
+    END IF;
+
+    UPDATE public.accounts SET daily_limit = new_limit WHERE user_id = auth.uid();
+
+    INSERT INTO public.audit_logs (user_id, action, details)
+    VALUES (
+        auth.uid(),
+        'daily_limit_changed',
+        jsonb_build_object('previous', previous_limit, 'current', new_limit)
+    );
+
+    RETURN new_limit;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.set_daily_limit(NUMERIC) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_daily_limit(NUMERIC) TO authenticated;

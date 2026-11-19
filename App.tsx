@@ -21,7 +21,7 @@ import {
 import { getAccountPinStatus, setAccountPin, verifyAccountPin } from './src/services/accountPin';
 import { isMfaVerificationRequired } from './src/services/mfa';
 import { ensureFreshInstallState, wipeLocalSessionData } from './src/services/deviceState';
-import { clearSensitiveClipboard } from './src/services/secureClipboard';
+import { clearExpiredSensitiveClipboard, clearSensitiveClipboard } from './src/services/secureClipboard';
 import { PrivacyCurtain } from './src/components/PrivacyCurtain';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -84,6 +84,7 @@ const MainNavigator = () => {
 
   const refreshGate = async () => {
     const refreshId = ++refreshIdRef.current;
+    await ensureFreshInstallState();
 
     const info = PIN_SUPPORTED ? await getPinVaultInfo() : null;
     const unlocked = isSessionUnlocked();
@@ -147,7 +148,7 @@ const MainNavigator = () => {
   }, []);
 
   useEffect(() => {
-    ensureFreshInstallState().finally(refreshGate);
+    refreshGate();
 
     const {
       data: { subscription },
@@ -179,6 +180,9 @@ const MainNavigator = () => {
         backgroundedAtRef.current = Date.now();
         return;
       }
+      if (nextState === 'active') {
+        clearExpiredSensitiveClipboard();
+      }
       if (nextState !== 'active' || backgroundedAtRef.current === null) {
         return;
       }
@@ -198,6 +202,10 @@ const MainNavigator = () => {
   const signOutAndWipe = async (scope: SignOutScope) => {
     try {
       await supabase.auth.signOut({ scope });
+    } catch {
+    }
+    try {
+      await supabase.auth.stopAutoRefresh();
     } catch {
     }
     await clearSensitiveClipboard();
@@ -243,6 +251,12 @@ const MainNavigator = () => {
       throw new Error(result.message);
     }
     await storeLocalPin(pin, result.version);
+    if (pinResetRequestedRef.current) {
+      try {
+        await supabase.auth.signOut({ scope: 'others' });
+      } catch {
+      }
+    }
     pinResetRequestedRef.current = false;
     await refreshGate();
   };
@@ -309,7 +323,12 @@ const MainNavigator = () => {
         ) : gate === 'pinSetup' ? (
           <PinScreen mode="setup" email={session?.user?.email} onCreate={handlePinCreate} onCancel={handleFullLogout} />
         ) : gate === 'home' && session?.user ? (
-          <HomeScreen session={session} onLogout={handleLogout} onPinLocked={handleForgotPin} />
+          <HomeScreen
+            session={session}
+            onLogout={handleLogout}
+            onFullLogout={handleFullLogout}
+            onPinLocked={handleForgotPin}
+          />
         ) : (
           <LoginScreen onLoginSuccess={refreshGate} />
         )}
