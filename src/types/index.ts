@@ -25,8 +25,10 @@ export interface BankAccount {
 export interface Transaction {
   id: string;
   sender_account_id: string;
+  recipient_account_id?: string | null;
   recipient_account_number: string;
   recipient_name: string;
+  sender_name?: string | null;
   amount: number;
   title: string;
   status: 'pending' | 'completed' | 'flagged' | 'rejected';

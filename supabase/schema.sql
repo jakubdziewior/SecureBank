@@ -364,3 +364,128 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 REVOKE ALL ON FUNCTION public.set_daily_limit(NUMERIC) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.set_daily_limit(NUMERIC) TO authenticated;
+
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS recipient_account_id UUID REFERENCES public.accounts(id);
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS sender_name VARCHAR(200);
+
+DROP POLICY IF EXISTS "transactions_insert_own" ON public.transactions;
+REVOKE INSERT, UPDATE, DELETE ON public.transactions FROM anon, authenticated;
+
+DROP POLICY IF EXISTS "transactions_select_incoming" ON public.transactions;
+CREATE POLICY "transactions_select_incoming"
+ON public.transactions FOR SELECT
+USING (
+    recipient_account_id IN (
+        SELECT id FROM public.accounts WHERE user_id = auth.uid()
+    )
+);
+
+CREATE OR REPLACE FUNCTION public.execute_transfer(
+    p_recipient_account TEXT,
+    p_recipient_name TEXT,
+    p_amount NUMERIC,
+    p_title TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+    v_digits TEXT;
+    v_name TEXT;
+    v_title TEXT;
+    v_sender public.accounts;
+    v_recipient public.accounts;
+    v_sender_name TEXT;
+    v_spent_today NUMERIC;
+    v_transaction_id UUID;
+BEGIN
+    IF auth.uid() IS NULL OR NOT public.mfa_satisfied() THEN
+        RAISE EXCEPTION 'not_authorized';
+    END IF;
+
+    v_name := LEFT(BTRIM(REGEXP_REPLACE(COALESCE(p_recipient_name, ''), '[[:cntrl:]]', '', 'g')), 200);
+    v_title := LEFT(BTRIM(REGEXP_REPLACE(COALESCE(p_title, ''), '[[:cntrl:]]', '', 'g')), 255);
+    IF v_name = '' OR v_title = '' THEN
+        RAISE EXCEPTION 'missing_fields';
+    END IF;
+
+    IF p_amount IS NULL OR p_amount <= 0 OR p_amount <> ROUND(p_amount, 2) OR p_amount > 9999999999999.99 THEN
+        RAISE EXCEPTION 'invalid_amount';
+    END IF;
+
+    v_digits := REGEXP_REPLACE(UPPER(COALESCE(p_recipient_account, '')), '^PL|[^0-9]', '', 'g');
+    IF v_digits !~ '^\d{26}$'
+       OR (SUBSTR(v_digits, 3) || '2521' || SUBSTR(v_digits, 1, 2))::NUMERIC % 97 <> 1 THEN
+        RAISE EXCEPTION 'invalid_account_number';
+    END IF;
+
+    SELECT * INTO v_sender FROM public.accounts WHERE user_id = auth.uid() LIMIT 1;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'account_not_found';
+    END IF;
+
+    SELECT * INTO v_recipient FROM public.accounts
+    WHERE REGEXP_REPLACE(account_number, '[^0-9]', '', 'g') = v_digits
+    LIMIT 1;
+
+    IF v_recipient.id = v_sender.id THEN
+        RAISE EXCEPTION 'same_account';
+    END IF;
+
+    PERFORM 1 FROM public.accounts
+    WHERE id IN (v_sender.id, v_recipient.id)
+    ORDER BY id
+    FOR UPDATE;
+
+    SELECT * INTO v_sender FROM public.accounts WHERE id = v_sender.id;
+
+    IF EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND is_blocked) THEN
+        RAISE EXCEPTION 'account_blocked';
+    END IF;
+
+    SELECT COALESCE(SUM(amount), 0) INTO v_spent_today
+    FROM public.transactions
+    WHERE sender_account_id = v_sender.id
+      AND status = 'completed'
+      AND created_at >= (DATE_TRUNC('day', NOW() AT TIME ZONE 'Europe/Warsaw') AT TIME ZONE 'Europe/Warsaw');
+
+    IF v_spent_today + p_amount > v_sender.daily_limit THEN
+        RAISE EXCEPTION 'daily_limit_exceeded:%', GREATEST(v_sender.daily_limit - v_spent_today, 0);
+    END IF;
+
+    IF v_sender.balance < p_amount THEN
+        RAISE EXCEPTION 'insufficient_funds';
+    END IF;
+
+    UPDATE public.accounts SET balance = balance - p_amount WHERE id = v_sender.id;
+    IF v_recipient.id IS NOT NULL THEN
+        UPDATE public.accounts SET balance = balance + p_amount WHERE id = v_recipient.id;
+    END IF;
+
+    SELECT TRIM(first_name || ' ' || last_name) INTO v_sender_name FROM public.profiles WHERE id = auth.uid();
+
+    INSERT INTO public.transactions (
+        sender_account_id, recipient_account_id, recipient_account_number,
+        recipient_name, sender_name, amount, title, status
+    )
+    VALUES (
+        v_sender.id, v_recipient.id, v_digits,
+        v_name, v_sender_name, p_amount, v_title, 'completed'
+    )
+    RETURNING id INTO v_transaction_id;
+
+    INSERT INTO public.audit_logs (user_id, action, details)
+    VALUES (
+        auth.uid(),
+        'transfer_executed',
+        jsonb_build_object('transaction_id', v_transaction_id, 'amount', p_amount, 'internal', v_recipient.id IS NOT NULL)
+    );
+
+    RETURN jsonb_build_object(
+        'transaction_id', v_transaction_id,
+        'balance', v_sender.balance - p_amount,
+        'internal', v_recipient.id IS NOT NULL
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
+
+REVOKE ALL ON FUNCTION public.execute_transfer(TEXT, TEXT, NUMERIC, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.execute_transfer(TEXT, TEXT, NUMERIC, TEXT) TO authenticated;

@@ -16,7 +16,7 @@ import {
   Animated,
 } from 'react-native';
 import { CameraView, BarcodeScanningResult } from 'expo-camera';
-import { supabase } from '../services/supabase';
+import { TransferResult, executeTransfer } from '../services/transfers';
 import { CameraAccess, getCameraAccess, logCameraAccess, requestCameraAccess } from '../services/cameraPermission';
 import { TransferDraft, isValidNrb, normalizeAccountNumber, parseTransferQr } from '../services/transferQr';
 import { BankAccount } from '../types';
@@ -26,7 +26,7 @@ interface TransferModalProps {
   visible: boolean;
   account: BankAccount | null;
   onClose: () => void;
-  onSubmitted: () => void;
+  onSubmitted: (result: TransferResult) => void;
 }
 
 type BannerKind = 'denied' | 'permanentlyDenied' | 'unavailable' | 'invalidQr' | 'scanned';
@@ -229,18 +229,15 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
 
     setSubmitting(true);
     try {
-      const { error: insertError } = await supabase.from('transactions').insert({
-        sender_account_id: account.id,
-        recipient_account_number: nrb,
-        recipient_name: draft.recipientName.trim(),
+      const result = await executeTransfer({
+        accountNumber: nrb,
+        recipientName: draft.recipientName.trim(),
         amount,
         title: draft.title.trim(),
-        status: 'pending',
       });
-      if (insertError) throw insertError;
-      onSubmitted();
+      onSubmitted(result);
     } catch (e: any) {
-      setError(e?.message || 'Nie udało się zlecić przelewu.');
+      setError(e?.message || 'Nie udało się wykonać przelewu.');
     } finally {
       setSubmitting(false);
     }

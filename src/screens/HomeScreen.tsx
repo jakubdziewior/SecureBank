@@ -16,6 +16,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { TransferModal } from '../components/TransferModal';
 import { SettingsModal } from '../components/SettingsModal';
+import { TransferResult } from '../services/transfers';
 
 interface HomeScreenProps {
   session: any;
@@ -99,7 +100,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
       const { data: transData, error: transError } = await supabase
         .from('transactions')
         .select('*')
-        .limit(5);
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       if (!transError && transData) {
         setTransactions(transData);
@@ -172,9 +174,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
     setTransferVisible(true);
   };
 
-  const handleTransferSubmitted = () => {
+  const handleTransferSubmitted = (result: TransferResult) => {
     setTransferVisible(false);
-    Alert.alert('Nowy przelew', 'Przelew został zlecony i oczekuje na realizację.');
+    setAccount((prev) => (prev ? { ...prev, balance: result.balance } : prev));
+    Alert.alert(
+      'Przelew wykonany',
+      result.internal
+        ? 'Środki zostały przekazane na rachunek odbiorcy w SecureBank.'
+        : 'Przelew został zrealizowany, a środki pobrane z rachunku.'
+    );
     fetchUserData();
   };
 
@@ -437,10 +445,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
             </Text>
           ) : (
             transactions.map((tx) => {
-              const isIncome =
-                tx.title.toLowerCase().includes('wynagrodzenie') ||
-                tx.title.toLowerCase().includes('przychodzący');
-              const initial = (tx.recipient_name || tx.title || 'T')[0].toUpperCase();
+              const isIncome = account
+                ? tx.recipient_account_id === account.id && tx.sender_account_id !== account.id
+                : tx.title.toLowerCase().includes('wynagrodzenie');
+              const counterparty = isIncome ? tx.sender_name || 'Przelew przychodzący' : tx.recipient_name;
+              const initial = (counterparty || tx.title || 'T')[0].toUpperCase();
 
               return (
                 <View
@@ -476,7 +485,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
                       style={[styles.txSubtitle, { color: theme.textSecondary }]}
                       numberOfLines={1}
                     >
-                      {tx.recipient_name}
+                      {counterparty}
                     </Text>
                     <Text style={[styles.txDate, { color: theme.textMuted }]}>
                       {new Date(tx.created_at).toLocaleDateString('pl-PL')}
