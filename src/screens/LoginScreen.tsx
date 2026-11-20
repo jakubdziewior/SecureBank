@@ -14,6 +14,7 @@ import {
 import { supabase, checkSupabaseConnection } from '../services/supabase';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { buildNrb, formatNrb } from '../services/transferQr';
 
 interface LoginScreenProps {
   onLoginSuccess: (session: any) => void;
@@ -145,13 +146,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   };
 
   const generateAccountNumber = (): string => {
-    const checkDigits = Math.floor(10 + Math.random() * 89).toString();
-    const bankCode = '1050 0099';
-    const p1 = Math.floor(1000 + Math.random() * 9000).toString();
-    const p2 = Math.floor(1000 + Math.random() * 9000).toString();
-    const p3 = Math.floor(1000 + Math.random() * 9000).toString();
-    const p4 = Math.floor(1000 + Math.random() * 9000).toString();
-    return `PL ${checkDigits} ${bankCode} ${p1} ${p2} ${p3} ${p4}`;
+    let bban = '10500099';
+    for (let i = 0; i < 4; i++) {
+      bban += Math.floor(1000 + Math.random() * 9000).toString();
+    }
+    return `PL ${formatNrb(buildNrb(bban))}`;
   };
 
   const validateInput = (): boolean => {

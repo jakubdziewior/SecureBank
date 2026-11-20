@@ -14,14 +14,25 @@ export const normalizeAccountNumber = (value: string): string => {
   return compact.startsWith('PL') ? compact.slice(2) : compact;
 };
 
-export const isValidNrb = (nrb: string): boolean => {
-  if (!/^\d{26}$/.test(nrb)) return false;
-  const rearranged = `${nrb.slice(2)}2521${nrb.slice(0, 2)}`;
+const mod97 = (digits: string): number => {
   let remainder = 0;
-  for (const digit of rearranged) {
+  for (const digit of digits) {
     remainder = (remainder * 10 + Number(digit)) % 97;
   }
-  return remainder === 1;
+  return remainder;
+};
+
+export const isValidNrb = (nrb: string): boolean => {
+  if (!/^\d{26}$/.test(nrb)) return false;
+  return mod97(`${nrb.slice(2)}2521${nrb.slice(0, 2)}`) === 1;
+};
+
+export const buildNrb = (bban: string): string => {
+  if (!/^\d{24}$/.test(bban)) {
+    throw new Error('BBAN musi mieć 24 cyfry.');
+  }
+  const checkDigits = String(98 - mod97(`${bban}252100`)).padStart(2, '0');
+  return `${checkDigits}${bban}`;
 };
 
 export const formatNrb = (nrb: string): string =>

@@ -18,7 +18,7 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS public.accounts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT,
-    account_number VARCHAR(26) UNIQUE NOT NULL,
+    account_number VARCHAR(40) UNIQUE NOT NULL,
     currency VARCHAR(3) DEFAULT 'PLN',
     balance DECIMAL(15, 2) DEFAULT 0.00 CHECK (balance >= 0.00),
     daily_limit DECIMAL(15, 2) DEFAULT 5000.00 CHECK (daily_limit >= 0.00),
@@ -122,11 +122,29 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 GRANT EXECUTE ON FUNCTION public.lookup_email_by_client_number(TEXT) TO anon, authenticated;
 
+CREATE OR REPLACE FUNCTION public.build_nrb(bban TEXT)
+RETURNS TEXT AS $$
+DECLARE
+    v_check TEXT;
+    v_nrb TEXT;
+BEGIN
+    IF bban !~ '^\d{24}$' THEN
+        RAISE EXCEPTION 'invalid_bban';
+    END IF;
+    v_check := LPAD((98 - ((bban || '252100')::NUMERIC % 97))::INT::TEXT, 2, '0');
+    v_nrb := v_check || bban;
+    RETURN 'PL ' || SUBSTR(v_nrb, 1, 2)
+        || ' ' || SUBSTR(v_nrb, 3, 4) || ' ' || SUBSTR(v_nrb, 7, 4)
+        || ' ' || SUBSTR(v_nrb, 11, 4) || ' ' || SUBSTR(v_nrb, 15, 4)
+        || ' ' || SUBSTR(v_nrb, 19, 4) || ' ' || SUBSTR(v_nrb, 23, 4);
+END;
+$$ LANGUAGE plpgsql IMMUTABLE SET search_path = '';
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     v_client_number VARCHAR(10);
-    v_account_number VARCHAR(26);
+    v_account_number VARCHAR(40);
 BEGIN
     v_client_number := COALESCE(
         new.raw_user_meta_data->>'client_number',
@@ -134,7 +152,13 @@ BEGIN
     );
     v_account_number := COALESCE(
         new.raw_user_meta_data->>'account_number',
-        'PL ' || LPAD(FLOOR(10 + RANDOM() * 89)::TEXT, 2, '0') || ' 1050 0099 ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0') || ' ' || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+        public.build_nrb(
+            '10500099'
+            || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+            || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+            || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+            || LPAD(FLOOR(1000 + RANDOM() * 8999)::TEXT, 4, '0')
+        )
     );
 
     INSERT INTO public.profiles (id, first_name, last_name, pesel, client_number, role)
