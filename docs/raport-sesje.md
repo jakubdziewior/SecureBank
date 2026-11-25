@@ -109,7 +109,7 @@ Zewnętrznego dostawcy tożsamości nie ma, bo Supabase Auth ma włączony wył�
 | **Token wygasa w trakcie pracy** | Aplikacja odświeża token bez udziału użytkownika; po unieważnieniu sesji przechodzi do logowania | **Przed i po:** `autoRefreshToken: true` (`src/services/supabase.ts:142`); po blokadzie odświeżanie jest zatrzymywane (`App.tsx:169`) i wznawiane po PIN-ie; nieudane odświeżenie emituje `SIGNED_OUT`, a strażnik `gate` przechodzi do logowania [D5]. | Test `S4` (rotacja tokenu); ręcznie: unieważnienie sesji w panelu Supabase → odblokowanie PIN-em → ekran logowania |
 | **Reinstalacja aplikacji** | Sesja nie wraca po usunięciu i ponownej instalacji [D5] | **Przed i po:** Android usuwa SecureStore z aplikacją; iOS: brak pliku flagi w `documentDirectory` powoduje wyczyszczenie Keychain przed pierwszym ekranem (`src/services/deviceState.ts:27`, `App.tsx:92`). Osierocona sesja serwerowa: po Z6 widoczna na liście sesji i możliwa do zakończenia przez „Wyloguj pozostałe urządzenia”. | Ręcznie: zalogowanie → usunięcie aplikacji → instalacja → ekran logowania (nagranie z Z5) |
 | **Przechwycony token** | Krótka użyteczność, brak możliwości wykonania operacji krytycznych bez dodatkowego uwierzytelnienia [MASVS] MASVS-AUTH-3 | **Przed:** JWT ważny do `exp` mimo wylogowania; dowolny zapis do `transactions` i tworzenie rachunku z dowolnym saldem przez RLS `accounts_insert_own` (`72c1dee:supabase/schema.sql:81`); przelew bez PIN-u. **Po:** odwołanie sesji działa natychmiast; bezpośrednie zapisy zablokowane (`supabase/schema.sql:382`, `:545`); przelew i podwyższenie limitu wymagają PIN-u znanego tylko użytkownikowi (`supabase/schema.sql:352`, `:397`). | Testy `T1`, `T2`, `R1`, `D2` |
-| **Ponowne użycie tokenu odświeżania** (zadanie A) | Ponowne użycie zużytego tokenu kończy całą sesję [SB-SES], RFC 9700 | **Przed i po:** wbudowana rotacja i wykrywanie ponownego użycia w Supabase (okno 10 s). Po Z6 skutek obejmuje także JWT tej sesji (decyzja 1). | Testy `A1`–`A3` |
+| **Ponowne użycie tokenu odświeżania** (zadanie A) | Ponowne użycie zużytego tokenu kończy całą sesję [SB-SES], RFC 9700 | **Stan faktyczny na serwerze Supabase:** rotacja tokenów działa (`S4`) i ponowne użycie starego tokenu po `12 s` jest odrzucane z `HTTP 400 refresh_token_already_used` (`A1`), jednak nasz projekt Supabase wydaje 12-znakowe tokeny `v1`, w których mimo włączonego wykrywania w panelu (`10 s`) aktualny token `R2` i wiersz `auth.sessions` nie zostały unieważnione (`A2`, `A3` FAIL). Po stronie bazy `session_active()` działa poprawnie dla każdego wylogowania (`D2`, `C1`). | Testy `A1`–`A3` (`A1` PASS; `A2`, `A3` FAIL — opis poniżej) |
 | **Logowanie u zewnętrznego dostawcy** | — | Nie dotyczy: włączony wyłącznie dostawca `email` (`GET /auth/v1/settings`), brak OAuth i WebView w kodzie | Zapytanie do `/auth/v1/settings`; przegląd `src/` |
 | **Logowanie biometrią** (zadanie B) | Biometria powinna odblokowywać klucz w sprzęcie, a nie zwracać `true/false` | Nie dotyczy: biometrii nie używamy. Odpowiednikiem jest PIN, który odszyfrowuje klucz danych sesji (PBKDF2 → AES-GCM, `src/services/pin.ts:146`); błędny PIN nie daje klucza, więc podmiana wyniku funkcji nic nie daje | Przegląd `src/services/pin.ts` |
 | **Odgadywanie hasła** | Najwyżej 5 nieudanych prób, potem blokada [RTS] art. 4 ust. 3 lit. b | **Przed:** tylko limit IP Supabase (150 żądań `/token` na 5 min [SB-RL]). **Po:** 5 prób na identyfikator, blokada 15 min (`supabase/schema.sql:558`). | Test `L2` |
@@ -118,25 +118,25 @@ Zewnętrznego dostawcy tożsamości nie ma, bo Supabase Auth ma włączony wył�
 
 ### Wyniki testów
 
-Do uzupełnienia po wgraniu migracji i uruchomieniu `TEST_EMAIL=… TEST_PASSWORD=… npm run test:sessions` na koncie testowym bez 2FA. Test `R1` zużywa jedną próbę PIN-u konta testowego.
+Uruchomiono `npm run test:sessions` po wgraniu migracji `supabase/migrations/z6_sesje.sql` oraz włączeniu `Confirm email` w panelu Supabase (`GET /auth/v1/settings` zwraca `mailer_autoconfirm: false`): **13/15 PASS** (2 odstępstwa po stronie serwera Supabase Auth dla tokenów odświeżania `v1`).
 
 | Test | Co sprawdza | Oczekiwane | Wynik |
 | :--- | :--- | :--- | :--- |
-| `P1` | Ważność JWT i obecność `session_id` | 3600 s, `session_id` jest | |
-| `S0` | Zwykłe zapytanie | 1 wiersz rachunku | |
-| `S4` | Rotacja tokenu odświeżania | nowy token przy każdym użyciu | |
-| `A1` | Ponowne użycie starego tokenu odświeżania po 12 s | HTTP 400 | |
-| `A2` | Aktualny token po wykryciu ponownego użycia | HTTP 400 | |
-| `A3` | JWT sesji odwołanej przez reuse detection | 0 wierszy | |
-| `D1` | Stary JWT po wylogowaniu: `/auth/v1/user` | 401 / 403 | |
-| `D2` | Stary JWT po wylogowaniu: dane | przed 1, po 0 | |
-| `D3` | Stary JWT po wylogowaniu: RPC | `not_authorized` | |
-| `C1` | „Wyloguj pozostałe urządzenia” | inna sesja 0 wierszy, bieżąca 1 | |
-| `T1` | Bezpośredni zapis przelewu | 401 / 403 | |
-| `T2` | Bezpośrednie utworzenie rachunku | 401 / 403 | |
-| `R1` | Przelew z błędnym PIN-em | `pin_invalid` | |
-| `L1` | Anonimowe pobranie e-maila | 404 | |
-| `L2` | 6 prób z błędnym hasłem | `locked` | |
+| `P1` | Ważność JWT i obecność `session_id` | 3600 s, `session_id` jest | **PASS** — `3600 s, session_id=jest` |
+| `S0` | Zwykłe zapytanie | 1 wiersz rachunku | **PASS** — `1` |
+| `S4` | Rotacja tokenu odświeżania | nowy token przy każdym użyciu | **PASS** — `HTTP 200, tokeny rozne` |
+| `A1` | Ponowne użycie starego tokenu odświeżania po 12 s | HTTP 400 | **PASS** — `HTTP 400 refresh_token_already_used` |
+| `A2` | Aktualny token po wykryciu ponownego użycia | HTTP 400 | **FAIL** — `HTTP 200` (mimo `10 s` i włączonego wykrywania w panelu Supabase aktualny 12-znakowy token `v1` pozostał aktywny; powtórzono z równym wynikiem także po `22 s` i z nagłówkiem `sb-auth-refresh-token-reuse: false`) |
+| `A3` | JWT sesji odwołanej przez reuse detection | 0 wierszy | **FAIL** — `1` (w konsekwencji `A2`, a także ponieważ w `supabase/auth` ścieżka `v1` `RevokeTokenFamily` nie wywołuje `LogoutSession` na `auth.sessions`, inaczej niż przy wylogowaniu w `D2` i `C1`) |
+| `D1` | Stary JWT po wylogowaniu: `/auth/v1/user` | 401 / 403 | **PASS** — `logout HTTP 204, /user HTTP 403` |
+| `D2` | Stary JWT po wylogowaniu: dane | przed 1, po 0 | **PASS** — `przed: 1, po: 0` |
+| `D3` | Stary JWT po wylogowaniu: RPC | `not_authorized` | **PASS** — `HTTP 400 not_authorized` |
+| `C1` | „Wyloguj pozostałe urządzenia” | inna sesja 0 wierszy, bieżąca 1 | **PASS** — `sesji przed: 3, inna: 0, biezaca: 1` |
+| `T1` | Bezpośredni zapis przelewu | 401 / 403 | **PASS** — `HTTP 403` |
+| `T2` | Bezpośrednie utworzenie rachunku | 401 / 403 | **PASS** — `HTTP 403` |
+| `R1` | Przelew z błędnym PIN-em | `pin_invalid` | **PASS** — `pin_invalid` |
+| `L1` | Anonimowe pobranie e-maila | 404 | **PASS** — `HTTP 404` |
+| `L2` | 6 prób z błędnym hasłem | `locked` | **PASS** — `locked retry_after=900` |
 
 ---
 
@@ -172,6 +172,7 @@ Do uzupełnienia po wgraniu migracji i uruchomieniu `TEST_EMAIL=… TEST_PASSWOR
 
 ### Znane ograniczenia po Z6
 
+* **Tokeny odświeżania `v1` w hostowanym Supabase a wykrywanie ponownego użycia (`A2`, `A3`).** Mimo ustawienia `10 s` i włączonego wykrywania w panelu Supabase projekt wydaje 12-znakowe tokeny `v1`; ponowne użycie starego tokenu po `12 s` i `22 s` zwraca `HTTP 400 refresh_token_already_used` (`A1`), ale nie unieważnia bieżącego tokenu `R2` ani wiersza `auth.sessions` (`A2`, `A3`). Dla jawnego wylogowania (`D2`, `C1`) `session_active()` odcina dostęp natychmiast.
 * **Wylogowanie z ekranu PIN-u nie unieważnia sesji na serwerze.** Przy zablokowanej aplikacji token jest zaszyfrowany i bez PIN-u nie da się go użyć. Aplikacja usuwa wtedy szyfrogram i skarbiec, a sesja serwerowa zostaje osierocona. Można ją zakończyć z innego urządzenia przez „Wyloguj pozostałe urządzenia”. Wylogowanie z ustawień (decyzja 6) unieważnia sesję w pełni.
 * **Limit prób z decyzji 5 da się obejść.** Bezpośrednie wywołanie `/auth/v1/token` pomija `resolve_login`, a wtedy działa tylko limit IP Supabase. Pełne egzekwowanie wymaga hooka weryfikacji hasła [SB-HOOK]. Dostępności hooka w naszym planie nie zweryfikowaliśmy.
 * **Blokadą da się zaszkodzić właścicielowi konta.** Osoba znająca e-mail lub numer klienta może wywołać blokadę na 15 minut. To świadomy kompromis z [OWASP-AUTH]: blokada jest czasowa, a nie trwała.

@@ -52,13 +52,13 @@ Najważniejsze ustalenia:
 
 | Zadanie | Kto | Status | Dowód / sposób sprawdzenia |
 | :--- | :---: | :---: | :--- |
-| **K1 · Poprawki sesji** (decyzje z 1.4) | Jakub Dziewior, Jakub Wodyk | zrobione w kodzie, opisane w commicie | Decyzje 1–7 wdrożone w aplikacji i w `supabase/schema.sql`. Zmiany bazy do wgrania jednym plikiem: `supabase/migrations/z6_sesje.sql`. Decyzje 8–9 to świadome „nie wdrażamy”, decyzja 10 to ustawienia panelu Supabase. |
-| **K2 · Scenariusze ponownie** (z 1.2) | Jakub Dziewior, Jakub Wodyk | czeka na migrację Z6 w Supabase | `npm run test:sessions` (`scripts/session-check.mjs`) sprawdza 15 przypadków na prawdziwym serwerze. Sonda API potwierdziła, że migracja nie została jeszcze wgrana (`lookup_email_by_client_number` zwraca HTTP 200, `my_sessions` zwraca HTTP 404). |
-| **K3 · Polityka i przygotowanie** (z 1.3) | Jakub Dziewior, Jakub Wodyk | zrobione w kodzie, czeka na panel Supabase | Wartości z 1.3 ustawione w kodzie; lista endpointów i przegląd danych wychodzących uzupełnione w `docs/raport-sesje.md`. W panelu Supabase nadal `mailer_autoconfirm: true` (sprawdzone przez `GET /auth/v1/settings`). |
-| **A · Ponowne użycie tokenu** (dla chętnych) | Jakub Wodyk | zrobione, do potwierdzenia testem | Rotacja i wykrywanie ponownego użycia w Supabase; dzięki decyzji 1 odwołana sesja traci także dostęp przez JWT. Testy `A1`–`A3`. |
+| **K1 · Poprawki sesji** (decyzje z 1.4) | Jakub Dziewior, Jakub Wodyk | zrobione | Decyzje 1–7 wdrożone w aplikacji, w `supabase/schema.sql`, wgrane migracją `supabase/migrations/z6_sesje.sql` i opisane w commicie. Decyzje 8–9 to świadome „nie wdrażamy”, decyzja 10 wdrożona w panelu Supabase. |
+| **K2 · Scenariusze ponownie** (z 1.2) | Jakub Dziewior, Jakub Wodyk | zrobione (13/15 PASS) | `npm run test:sessions` (`scripts/session-check.mjs`) uruchomione po wgraniu migracji: 13/15 PASS; `A2` i `A3` FAIL wynikają z zachowania hostowanego Supabase Auth dla tokenów `v1` i są opisane w tabeli „Wyniki testów” w `docs/raport-sesje.md`. |
+| **K3 · Polityka i przygotowanie** (z 1.3) | Jakub Dziewior, Jakub Wodyk | zrobione | Wartości z 1.3 ustawione w kodzie, `Confirm email` włączone w panelu Supabase (`GET /auth/v1/settings` zwraca `mailer_autoconfirm: false`). Lista endpointów API i przegląd danych wychodzących w `docs/raport-sesje.md`. |
+| **A · Ponowne użycie tokenu** (dla chętnych) | Jakub Wodyk | przetestowane (częściowe PASS) | `A1` PASS (`HTTP 400 refresh_token_already_used`), `A2` i `A3` FAIL przez zachowanie tokenów `v1` w hostowanym Supabase Auth — szczegóły w `docs/raport-sesje.md`. |
 | **B · Biometria z kluczem** (dla chętnych) | — | nie dotyczy | Aplikacja nie używa biometrii (decyzja z Z4). PIN odszyfrowuje klucz danych sesji (`src/services/pin.ts:146`), więc nie jest wartością `true/false`. Decyzja 8. |
-| **C · Wyloguj wszędzie** (dla chętnych) | Jakub Wodyk | zrobione, do potwierdzenia testem | Ustawienia → „Sesje i urządzenia”: lista sesji, „Wyloguj pozostałe urządzenia” (`scope=others`) i „Wyloguj wszędzie” (`scope=global` + wyczyszczenie telefonu). Test `C1`. |
-| **D · Stary token po wylogowaniu** (dla chętnych) | Jakub Wodyk | zrobione, do potwierdzenia testem | Przed Z6 stary JWT dawał dostęp do danych do `exp`; po Z6 `session_active()` odcina go natychmiast. Testy `D1`–`D3`. |
+| **C · Wyloguj wszędzie** (dla chętnych) | Jakub Wodyk | zrobione i potwierdzone | Ustawienia → „Sesje i urządzenia”: lista sesji, „Wyloguj pozostałe urządzenia” (`scope=others`) i „Wyloguj wszędzie” (`scope=global` + wyczyszczenie telefonu). Test `C1` PASS. |
+| **D · Stary token po wylogowaniu** (dla chętnych) | Jakub Wodyk | zrobione i potwierdzone | Przed Z6 stary JWT dawał dostęp do danych do `exp`; po Z6 `session_active()` odcina go natychmiast. Testy `D1`–`D3` PASS. |
 
 ---
 
@@ -66,7 +66,7 @@ Najważniejsze ustalenia:
 
 | Zadanie | Kto | Termin | Sposób sprawdzenia |
 | :--- | :---: | :---: | :--- |
-| **Wgranie migracji Z6 i uruchomienie testów sesji** | Jakub Dziewior, Jakub Wodyk | przed zajęciami 7 (wymaga panelu Supabase) | `supabase/migrations/z6_sesje.sql` w SQL Editorze, potem `npm run test:sessions`; wyniki wpisane do raportu (15/15 PASS albo opisane odstępstwa). |
+| **Wgranie migracji Z6 i uruchomienie testów sesji** | Jakub Dziewior, Jakub Wodyk | zrobione przed zajęciami 7 | `supabase/migrations/z6_sesje.sql` wgrane w SQL Editorze; `npm run test:sessions` zwróciło 13/15 PASS, wyniki i odstępstwa (`A2`, `A3`) wpisane do `docs/raport-sesje.md`. |
 | **Test MitM z proxy na urządzeniu** | Jakub Wodyk | zajęcia 7 | mitmproxy lub Burp z zainstalowanym certyfikatem użytkownika; połączenie z Supabase zerwane przez przypinanie i Network Security Config; zrzuty z logów proxy bez JWT i danych przelewów. |
 | **Przegląd tego, co aplikacja wysyła do sieci** | Jakub Dziewior | zrobione (`docs/raport-sesje.md`) | Pełna tabela dla wszystkich 19 endpointów z listy w `docs/raport-sesje.md`; w kodzie wymuszono sprawdzanie `isPinnedHost` w `assertNetworkSecurityPolicy` (`src/services/certificatePinning.ts`) oraz jawną listę kolumn zamiast `select('*')` w `src/screens/HomeScreen.tsx`. |
-| **Ustawienia panelu Supabase z 1.3** | Jakub Dziewior | przed zajęciami 7 (wymaga panelu Supabase) | Włączone potwierdzanie e-maila (`GET /auth/v1/settings` na 25.11 zwraca jeszcze `mailer_autoconfirm: true`, docelowo `false`); wykrywanie ponownego użycia tokenu pozostaje włączone. |
+| **Ustawienia panelu Supabase z 1.3** | Jakub Dziewior | zrobione przed zajęciami 7 | Potwierdzanie e-maila włączone (`GET /auth/v1/settings` zwraca `mailer_autoconfirm: false`); wykrywanie ponownego użycia tokenu (okno `10 s`) i ważność JWT (`3600 s`) włączone w panelu. |
