@@ -22,6 +22,7 @@ import { getAccountPinStatus, setAccountPin, verifyAccountPin } from './src/serv
 import { isMfaVerificationRequired } from './src/services/mfa';
 import { ensureFreshInstallState, wipeLocalSessionData } from './src/services/deviceState';
 import { clearExpiredSensitiveClipboard, clearSensitiveClipboard } from './src/services/secureClipboard';
+import { INACTIVITY_LOCK_MS, getIdleTimeMs, markUserActivity } from './src/services/activity';
 import { PrivacyCurtain } from './src/components/PrivacyCurtain';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -30,6 +31,7 @@ import { MfaVerifyScreen } from './src/screens/MfaVerifyScreen';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 const LOCK_AFTER_BACKGROUND_MS = 30000;
+const INACTIVITY_CHECK_INTERVAL_MS = 15000;
 const PIN_SUPPORTED = Platform.OS !== 'web';
 
 type SignOutScope = 'local' | 'global';
@@ -58,6 +60,9 @@ const MainNavigator = () => {
     }
     const fromLoading = gateRef.current === 'loading';
     gateRef.current = nextGate;
+    if (nextGate === 'home') {
+      markUserActivity();
+    }
 
     if (fromLoading) {
       setSession(nextSession);
@@ -199,6 +204,17 @@ const MainNavigator = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!PIN_SUPPORTED) return;
+    const timer = setInterval(() => {
+      if (gateRef.current !== 'home' || AppState.currentState !== 'active') return;
+      if (getIdleTimeMs() >= INACTIVITY_LOCK_MS) {
+        lockApp();
+      }
+    }, INACTIVITY_CHECK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+
   const signOutAndWipe = async (scope: SignOutScope) => {
     try {
       await supabase.auth.signOut({ scope });
@@ -216,6 +232,11 @@ const MainNavigator = () => {
 
   const handleFullLogout = async () => {
     await signOutAndWipe('local');
+    await refreshGate();
+  };
+
+  const handleGlobalLogout = async () => {
+    await signOutAndWipe('global');
     await refreshGate();
   };
 
@@ -305,7 +326,7 @@ const MainNavigator = () => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }]} onTouchStart={markUserActivity}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Animated.View style={[styles.screenWrapper, screenAnimatedStyle]}>
         {gate === 'pinUnlock' || gate === 'pinConfirm' ? (
@@ -327,6 +348,7 @@ const MainNavigator = () => {
             session={session}
             onLogout={handleLogout}
             onFullLogout={handleFullLogout}
+            onGlobalLogout={handleGlobalLogout}
             onPinLocked={handleForgotPin}
           />
         ) : (

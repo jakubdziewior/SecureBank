@@ -22,10 +22,11 @@ interface HomeScreenProps {
   session: any;
   onLogout: () => void;
   onFullLogout: () => void;
+  onGlobalLogout: () => void;
   onPinLocked: () => void;
 }
 
-export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFullLogout, onPinLocked }) => {
+export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFullLogout, onGlobalLogout, onPinLocked }) => {
   const { theme, isDark } = useTheme();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -174,7 +175,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
     setTransferVisible(true);
   };
 
-  const handleTransferSubmitted = (result: TransferResult) => {
+  const handleTransferSubmitted = (result: Extract<TransferResult, { status: 'ok' }>) => {
     setTransferVisible(false);
     setAccount((prev) => (prev ? { ...prev, balance: result.balance } : prev));
     Alert.alert(
@@ -512,6 +513,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
         account={account}
         onClose={() => setTransferVisible(false)}
         onSubmitted={handleTransferSubmitted}
+        onPinLocked={() => {
+          setTransferVisible(false);
+          onPinLocked();
+        }}
       />
 
       <SettingsModal
@@ -522,6 +527,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
         userEmail={userEmail}
         onPinLocked={onPinLocked}
         onFullLogout={onFullLogout}
+        onGlobalLogout={onGlobalLogout}
         onDailyLimitChanged={(limit) => setAccount((prev) => (prev ? { ...prev, daily_limit: limit } : prev))}
         balanceVisible={balanceVisible}
         onToggleBalancePrivacy={toggleBalancePrivacy}

@@ -16,7 +16,9 @@ import {
   Animated,
 } from 'react-native';
 import { CameraView, BarcodeScanningResult } from 'expo-camera';
-import { TransferResult, executeTransfer } from '../services/transfers';
+import { TransferResult, executeTransfer, newTransferRequestId } from '../services/transfers';
+import { markUserActivity } from '../services/activity';
+import { PinConfirmModal, PinConfirmOutcome } from './PinConfirmModal';
 import { CameraAccess, getCameraAccess, logCameraAccess, requestCameraAccess } from '../services/cameraPermission';
 import { TransferDraft, isValidNrb, normalizeAccountNumber, parseTransferQr } from '../services/transferQr';
 import { BankAccount } from '../types';
@@ -26,7 +28,8 @@ interface TransferModalProps {
   visible: boolean;
   account: BankAccount | null;
   onClose: () => void;
-  onSubmitted: (result: TransferResult) => void;
+  onSubmitted: (result: Extract<TransferResult, { status: 'ok' }>) => void;
+  onPinLocked: () => void;
 }
 
 type BannerKind = 'denied' | 'permanentlyDenied' | 'unavailable' | 'invalidQr' | 'scanned';
@@ -45,7 +48,7 @@ const EMPTY_DRAFT: TransferDraft = { recipientName: '', accountNumber: '', amoun
 const accessToBanner = (access: CameraAccess): BannerKind | null =>
   access === 'denied' || access === 'permanentlyDenied' || access === 'unavailable' ? access : null;
 
-export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, onClose, onSubmitted }) => {
+export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, onClose, onSubmitted, onPinLocked }) => {
   const { theme } = useTheme();
 
   const [draft, setDraft] = useState<TransferDraft>(EMPTY_DRAFT);
@@ -54,6 +57,15 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
   const [banner, setBanner] = useState<BannerKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [pinVisible, setPinVisible] = useState(false);
+  const [pendingTransfer, setPendingTransfer] = useState<{
+    accountNumber: string;
+    recipientName: string;
+    amount: number;
+    title: string;
+  } | null>(null);
+  const requestIdRef = useRef<string>(newTransferRequestId());
+  const transferResultRef = useRef<Extract<TransferResult, { status: 'ok' }> | null>(null);
 
   const scanHandledRef = useRef(false);
   const settingsOpenedRef = useRef(false);
@@ -69,6 +81,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
   useEffect(() => {
     if (!visible) return;
     setDraft(EMPTY_DRAFT);
+    setPinVisible(false);
+    setPendingTransfer(null);
+    requestIdRef.current = newTransferRequestId();
+    transferResultRef.current = null;
     setScannerOpen(false);
     setBanner(null);
     setError(null);
@@ -198,6 +214,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
 
   const updateField = (field: keyof TransferDraft) => (value: string) => {
     setDraft((prev) => ({ ...prev, [field]: value }));
+    requestIdRef.current = newTransferRequestId();
     if (error) setError(null);
   };
 
@@ -227,20 +244,50 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
       return;
     }
 
+    setError(null);
+    setPendingTransfer({
+      accountNumber: nrb,
+      recipientName: draft.recipientName.trim(),
+      amount,
+      title: draft.title.trim(),
+    });
+    setPinVisible(true);
+  };
+
+  const confirmTransferWithPin = async (pin: string): Promise<PinConfirmOutcome> => {
+    if (!pendingTransfer) return { status: 'error', message: 'Brak danych przelewu.' };
     setSubmitting(true);
     try {
-      const result = await executeTransfer({
-        accountNumber: nrb,
-        recipientName: draft.recipientName.trim(),
-        amount,
-        title: draft.title.trim(),
-      });
-      onSubmitted(result);
+      const result = await executeTransfer({ ...pendingTransfer, pin, requestId: requestIdRef.current });
+      if (result.status === 'pin_invalid') {
+        if (result.reset) return { status: 'locked' };
+        return { status: 'retry', message: `Niepoprawny PIN. Pozostałe próby: ${result.attemptsLeft}.` };
+      }
+      transferResultRef.current = result;
+      return { status: 'ok' };
     } catch (e: any) {
-      setError(e?.message || 'Nie udało się wykonać przelewu.');
+      return { status: 'error', message: e?.message || 'Nie udało się wykonać przelewu.' };
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handlePinDone = () => {
+    setPinVisible(false);
+    const result = transferResultRef.current;
+    transferResultRef.current = null;
+    requestIdRef.current = newTransferRequestId();
+    if (result) onSubmitted(result);
+  };
+
+  const handlePinLocked = () => {
+    setPinVisible(false);
+    onPinLocked();
+  };
+
+  const handlePinError = (message: string) => {
+    setPinVisible(false);
+    setError(message);
   };
 
   const bannerIsInfo = banner === 'scanned';
@@ -276,7 +323,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
 
   return (
     <Modal visible={visible} animationType="none" transparent onRequestClose={handleClose}>
-      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]} onTouchStart={markUserActivity}>
         <TouchableOpacity style={styles.backdropTouch} activeOpacity={1} onPress={handleClose} />
         <KeyboardAvoidingView
           style={styles.sheetContainer}
@@ -392,6 +439,21 @@ export const TransferModal: React.FC<TransferModalProps> = ({ visible, account, 
           </Animated.View>
         </KeyboardAvoidingView>
       </Animated.View>
+
+      <PinConfirmModal
+        visible={pinVisible}
+        title="Potwierdź przelew PIN-em"
+        description={
+          pendingTransfer
+            ? `${pendingTransfer.amount.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} PLN dla: ${pendingTransfer.recipientName}`
+            : undefined
+        }
+        onConfirm={confirmTransferWithPin}
+        onClose={() => setPinVisible(false)}
+        onDone={handlePinDone}
+        onLocked={handlePinLocked}
+        onError={handlePinError}
+      />
     </Modal>
   );
 };

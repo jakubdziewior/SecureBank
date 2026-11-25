@@ -16,6 +16,9 @@ import {
 import { supabase } from '../services/supabase';
 import { disableTotp, getVerifiedTotpFactorId } from '../services/mfa';
 import { DAILY_LIMIT_OPTIONS, DailyLimitOption, formatLimit, setDailyLimit } from '../services/accountLimits';
+import { ActiveSession, describeUserAgent, listActiveSessions, signOutOtherSessions } from '../services/sessions';
+import { markUserActivity } from '../services/activity';
+import { PinConfirmModal, PinConfirmOutcome } from './PinConfirmModal';
 import { UserProfile, BankAccount } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { PinChangeModal } from './PinChangeModal';
@@ -34,6 +37,7 @@ interface SettingsModalProps {
   userEmail: string;
   onPinLocked: () => void;
   onFullLogout: () => void;
+  onGlobalLogout: () => void;
   onDailyLimitChanged: (limit: number) => void;
   balanceVisible: boolean;
   onToggleBalancePrivacy: () => void;
@@ -47,6 +51,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   userEmail,
   onPinLocked,
   onFullLogout,
+  onGlobalLogout,
   onDailyLimitChanged,
   balanceVisible,
   onToggleBalancePrivacy,
@@ -68,6 +73,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [limitPickerOpen, setLimitPickerOpen] = useState(false);
   const [limitSaving, setLimitSaving] = useState<number | null>(null);
   const [limitMessage, setLimitMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
+  const [limitPinTarget, setLimitPinTarget] = useState<DailyLimitOption | null>(null);
+  const [sessions, setSessions] = useState<ActiveSession[] | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsMessage, setSessionsMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(600)).current;
@@ -87,6 +96,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       limitExpandAnim.setValue(0);
       setLimitMessage(null);
       setLimitSaving(null);
+      setLimitPinTarget(null);
+      setSessionsMessage(null);
+      loadSessions();
 
       fadeAnim.setValue(0);
       slideAnim.setValue(600);
@@ -149,13 +161,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const applyDailyLimit = async (limit: DailyLimitOption) => {
+  const limitSaved = (limit: number) => {
+    onDailyLimitChanged(limit);
+    setLimitMessage({ type: 'success', text: `Nowy limit dzienny: ${formatLimit(limit)}.` });
+  };
+
+  const lowerDailyLimit = async (limit: DailyLimitOption) => {
     setLimitSaving(limit);
     setLimitMessage(null);
     try {
-      const saved = await setDailyLimit(limit);
-      onDailyLimitChanged(saved);
-      setLimitMessage({ type: 'success', text: `Nowy limit dzienny: ${formatLimit(saved)}.` });
+      const result = await setDailyLimit(limit);
+      if (result.status === 'ok') {
+        limitSaved(result.limit);
+      } else if (result.status === 'pin_required') {
+        setLimitPinTarget(limit);
+      }
     } catch (e: any) {
       setLimitMessage({ type: 'error', text: e?.message || 'Nie udało się zmienić limitu.' });
     } finally {
@@ -163,20 +183,80 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const confirmLimitWithPin = async (pin: string): Promise<PinConfirmOutcome> => {
+    if (limitPinTarget === null) return { status: 'error', message: 'Nie wybrano limitu.' };
+    try {
+      const result = await setDailyLimit(limitPinTarget, pin);
+      if (result.status === 'ok') {
+        limitSaved(result.limit);
+        return { status: 'ok' };
+      }
+      if (result.status === 'pin_invalid') {
+        if (result.reset) return { status: 'locked' };
+        return { status: 'retry', message: `Niepoprawny PIN. Pozostałe próby: ${result.attemptsLeft}.` };
+      }
+      return { status: 'retry', message: 'Wprowadź PIN, aby potwierdzić zmianę.' };
+    } catch (e: any) {
+      return { status: 'error', message: e?.message || 'Nie udało się zmienić limitu.' };
+    }
+  };
+
   const handleSelectLimit = (limit: DailyLimitOption) => {
     if (limitSaving !== null || limit === currentDailyLimit) return;
-    if (limit > currentDailyLimit && Platform.OS !== 'web') {
-      Alert.alert(
-        'Podwyższenie limitu',
-        `Czy na pewno chcesz podwyższyć dzienny limit operacji do ${formatLimit(limit)}?`,
-        [
-          { text: 'Anuluj', style: 'cancel' },
-          { text: 'Podwyższ', onPress: () => applyDailyLimit(limit) },
-        ]
-      );
+    setLimitMessage(null);
+    if (limit > currentDailyLimit) {
+      setLimitPinTarget(limit);
       return;
     }
-    applyDailyLimit(limit);
+    lowerDailyLimit(limit);
+  };
+
+  const loadSessions = async () => {
+    setSessionsLoading(true);
+    try {
+      setSessions(await listActiveSessions());
+    } catch {
+      setSessions(null);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const handleSignOutOthers = async () => {
+    setSessionsMessage(null);
+    setSessionsLoading(true);
+    try {
+      await signOutOtherSessions();
+      setSessionsMessage({ type: 'success', text: 'Pozostałe urządzenia zostały wylogowane.' });
+      setSessions(await listActiveSessions());
+    } catch (e: any) {
+      setSessionsMessage({ type: 'error', text: e?.message || 'Nie udało się wylogować pozostałych urządzeń.' });
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const handleGlobalLogout = () => {
+    if (Platform.OS === 'web') {
+      onClose();
+      onGlobalLogout();
+      return;
+    }
+    Alert.alert(
+      'Wyloguj wszędzie',
+      'Wszystkie sesje, także na tym telefonie, zostaną natychmiast unieważnione, a PIN usunięty z tego urządzenia.',
+      [
+        { text: 'Anuluj', style: 'cancel' },
+        {
+          text: 'Wyloguj wszędzie',
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            onGlobalLogout();
+          },
+        },
+      ]
+    );
   };
 
   const loadTotpState = async () => {
@@ -392,7 +472,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={handleClose}>
-      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]} onTouchStart={markUserActivity}>
         <TouchableOpacity style={styles.backdropTouch} activeOpacity={1} onPress={handleClose} />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetContainer}>
           <Animated.View
@@ -763,7 +843,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Sesja</Text>
+              <Text style={[styles.sectionHeading, { color: theme.textMuted, marginTop: 22 }]}>Sesje i urządzenia</Text>
+
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary, flexDirection: 'column', alignItems: 'stretch' }]}>
+                <View style={styles.rowBetween}>
+                  <View style={styles.settingText}>
+                    <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Aktywne sesje</Text>
+                    <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
+                      {sessions ? `Zalogowane urządzenia: ${sessions.length}` : 'Lista zalogowanych urządzeń'}
+                    </Text>
+                  </View>
+                  {sessionsLoading ? <ActivityIndicator size="small" color={theme.primary} /> : null}
+                </View>
+                {sessions?.map((item) => (
+                  <View key={item.id} style={[styles.sessionItem, { borderTopColor: theme.cardBorder }]}>
+                    <Text style={[styles.sessionTitle, { color: theme.textPrimary }]}>
+                      {describeUserAgent(item.userAgent)}
+                      {item.current ? ' · to urządzenie' : ''}
+                    </Text>
+                    <Text style={[styles.sessionMeta, { color: theme.textMuted }]}>
+                      Ostatnia aktywność: {new Date(item.lastActive).toLocaleString('pl-PL')}
+                    </Text>
+                  </View>
+                ))}
+                {sessionsMessage && (
+                  <Text
+                    style={[
+                      styles.limitMessage,
+                      { color: sessionsMessage.type === 'error' ? theme.expense : theme.income },
+                    ]}
+                  >
+                    {sessionsMessage.text}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.sessionButton, { borderColor: theme.primary }]}
+                  onPress={handleSignOutOthers}
+                  disabled={sessionsLoading}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.primary }]}>Wyloguj pozostałe urządzenia</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
+                <View style={styles.settingText}>
+                  <Text style={[styles.settingTitle, { color: theme.textPrimary }]}>Wyloguj wszędzie</Text>
+                  <Text style={[styles.settingDesc, { color: theme.textSecondary }]}>
+                    Kończy wszystkie sesje, także na tym telefonie
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { borderColor: theme.expense }]}
+                  onPress={handleGlobalLogout}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.expense }]}>Wyloguj</Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={[styles.settingRow, { borderColor: theme.cardBorder, backgroundColor: theme.cardSecondary }]}>
                 <View style={styles.settingText}>
@@ -803,6 +940,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onClose={() => setPinChangeVisible(false)}
         onChanged={handlePinChanged}
         onLocked={handlePinLocked}
+      />
+
+      <PinConfirmModal
+        visible={limitPinTarget !== null}
+        title="Potwierdź PIN-em"
+        description={limitPinTarget !== null ? `Podwyższenie dziennego limitu do ${formatLimit(limitPinTarget)}` : undefined}
+        onConfirm={confirmLimitWithPin}
+        onClose={() => setLimitPinTarget(null)}
+        onDone={() => setLimitPinTarget(null)}
+        onLocked={() => {
+          setLimitPinTarget(null);
+          handlePinLocked();
+        }}
+        onError={(message) => {
+          setLimitPinTarget(null);
+          setLimitMessage({ type: 'error', text: message });
+        }}
       />
     </Modal>
   );
@@ -960,6 +1114,26 @@ const styles = StyleSheet.create({
   actionBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  sessionItem: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+  },
+  sessionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sessionMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  sessionButton: {
+    marginTop: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   limitPicker: {
     marginTop: 14,

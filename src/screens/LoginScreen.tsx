@@ -15,6 +15,7 @@ import { supabase, checkSupabaseConnection } from '../services/supabase';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { buildNrb, formatNrb } from '../services/transferQr';
+import { formatLockout, resolveLogin } from '../services/login';
 
 interface LoginScreenProps {
   onLoginSuccess: (session: any) => void;
@@ -268,27 +269,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
         if (error) throw error;
 
-        if (data.user) {
-          try {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              first_name: firstName.trim(),
-              last_name: lastName.trim(),
-              pesel: pesel.trim(),
-              client_number: clientNumber,
-              role: 'client',
-            });
-            await supabase.from('accounts').upsert({
-              user_id: data.user.id,
-              account_number: accountNumber,
-              currency: 'PLN',
-              balance: 1000.0,
-              daily_limit: 5000.0,
-            });
-          } catch {
-          }
-        }
-
         if (data.session) {
           onLoginSuccess(data.session);
         } else if (data.user) {
@@ -311,23 +291,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           }
         }
       } else {
-        let authEmail = rawLogin.toLowerCase();
-
-        if (!authEmail.includes('@')) {
-          try {
-            const { data: rpcEmail, error: rpcError } = await supabase.rpc(
-              'lookup_email_by_client_number',
-              { p_client_number: rawLogin }
-            );
-            if (!rpcError && rpcEmail) {
-              authEmail = String(rpcEmail).toLowerCase();
-            }
-          } catch {
-          }
+        const resolution = await resolveLogin(rawLogin, password);
+        if (resolution.status === 'locked') {
+          setPasswordError(true);
+          showFeedback('error', formatLockout(resolution.retryAfterSeconds));
+          return;
+        }
+        if (resolution.status === 'invalid') {
+          setPasswordError(true);
+          showFeedback(
+            'error',
+            resolution.attemptsLeft !== null && resolution.attemptsLeft <= 2
+              ? `Niepoprawny login lub hasło. Pozostałe próby przed blokadą: ${resolution.attemptsLeft}.`
+              : 'Niepoprawny login lub hasło.'
+          );
+          return;
         }
 
         const { data, error } = await supabase.auth.signInWithPassword({
-          email: authEmail,
+          email: resolution.email,
           password,
         });
 
