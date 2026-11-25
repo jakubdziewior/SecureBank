@@ -83,6 +83,12 @@ export const assertNetworkSecurityPolicy = (urlStr: string): void => {
       `SSLHandshakeException: Blokada nieszyfrowanego ruchu (${parsed.protocol}). Zgodnie z Network Security Config caly ruch musi odbywac sie w kanale TLS 1.3 [MASVS-NETWORK-1].`
     );
   }
+
+  if (!isPinnedHost(urlStr)) {
+    throw new SSLHandshakeException(
+      `SSLHandshakeException: Odrzucono polaczenie z nieprzypietym hostem (${parsed.hostname}). Dozwolone sa wylacznie domeny *.supabase.co [MASVS-NETWORK-2].`
+    );
+  }
 };
 
 /**

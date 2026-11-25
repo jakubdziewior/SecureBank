@@ -80,7 +80,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
 
       const { data: accountData, error: accountError } = await supabase
         .from('accounts')
-        .select('*')
+        .select('id, user_id, account_number, currency, balance, daily_limit, created_at')
         .eq('user_id', userId)
         .single();
 
@@ -100,7 +100,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
 
       const { data: transData, error: transError } = await supabase
         .from('transactions')
-        .select('*')
+        .select(
+          'id, sender_account_id, recipient_account_id, recipient_account_number, recipient_name, sender_name, amount, title, status, created_at'
+        )
         .order('created_at', { ascending: false })
         .limit(10);
 
