@@ -15,6 +15,7 @@ import { BankAccount, Transaction, UserProfile } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { TransferModal } from '../components/TransferModal';
+import { ReceiveQrModal } from '../components/ReceiveQrModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { TransferResult } from '../services/transfers';
 
@@ -35,6 +36,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
   const [loading, setLoading] = useState(true);
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [transferVisible, setTransferVisible] = useState(false);
+  const [receiveQrVisible, setReceiveQrVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
 
   const balanceOpacity = useRef(new Animated.Value(1)).current;
@@ -404,18 +406,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
               Zleć przelew
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={fetchUserData} activeOpacity={0.8} style={styles.secondaryActionWrapper}>
+          <TouchableOpacity
+            onPress={() => setReceiveQrVisible(true)}
+            activeOpacity={0.8}
+            style={styles.secondaryActionWrapper}
+          >
             <View
               style={[
                 styles.secondaryAction,
                 {
                   backgroundColor: theme.card,
-                  borderColor: theme.cardBorder,
+                  borderColor: theme.primary,
                 },
               ]}
             >
-              <Text style={[styles.secondaryActionText, { color: theme.textPrimary }]}>
-                Odśwież
+              <Text style={[styles.secondaryActionText, { color: theme.primary }]}>
+                Odbierz QR
               </Text>
             </View>
           </TouchableOpacity>
@@ -432,12 +438,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
           ]}
         >
           <View style={styles.transactionsHeader}>
-            <Text style={[styles.transactionsTitle, { color: theme.textPrimary }]}>
-              Ostatnie transakcje
-            </Text>
-            <Text style={[styles.transactionsCount, { color: theme.textMuted }]}>
-              {transactions.length} operacje
-            </Text>
+            <View>
+              <Text style={[styles.transactionsTitle, { color: theme.textPrimary }]}>
+                Ostatnie transakcje
+              </Text>
+              <Text style={[styles.transactionsCount, { color: theme.textMuted }]}>
+                {transactions.length} operacje
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={fetchUserData}
+              activeOpacity={0.7}
+              style={[
+                styles.refreshPill,
+                { backgroundColor: theme.cardSecondary, borderColor: theme.cardBorder },
+              ]}
+            >
+              <Text style={[styles.refreshPillText, { color: theme.textPrimary }]}>Odśwież</Text>
+            </TouchableOpacity>
           </View>
 
           {loading ? (
@@ -519,6 +537,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ session, onLogout, onFul
           setTransferVisible(false);
           onPinLocked();
         }}
+      />
+
+      <ReceiveQrModal
+        visible={receiveQrVisible}
+        account={account}
+        profile={profile}
+        onClose={() => setReceiveQrVisible(false)}
       />
 
       <SettingsModal
@@ -725,7 +750,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   primaryAction: {
-    flex: 0.64,
+    flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
@@ -739,7 +764,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   secondaryActionWrapper: {
-    flex: 0.36,
+    flex: 1,
   },
   secondaryAction: {
     width: '100%',
@@ -750,6 +775,16 @@ const styles = StyleSheet.create({
   },
   secondaryActionText: {
     fontSize: 14,
+    fontWeight: '700',
+  },
+  refreshPill: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  refreshPillText: {
+    fontSize: 12,
     fontWeight: '600',
   },
   transactionsContainer: {

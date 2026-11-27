@@ -1,3 +1,5 @@
+import qrcode from 'qrcode-generator';
+
 export interface TransferDraft {
   recipientName: string;
   accountNumber: string;
@@ -5,9 +7,17 @@ export interface TransferDraft {
   title: string;
 }
 
+export type BuildTransferQrResult =
+  | { ok: true; payload: string }
+  | { ok: false; error: string };
+
 const MAX_QR_LENGTH = 512;
 const MAX_NAME_LENGTH = 200;
 const MAX_TITLE_LENGTH = 255;
+
+if (qrcode.stringToBytesFuncs?.['UTF-8']) {
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+}
 
 export const normalizeAccountNumber = (value: string): string => {
   const compact = value.replace(/[\s-]/g, '').toUpperCase();
@@ -40,6 +50,63 @@ export const formatNrb = (nrb: string): string =>
 
 const sanitizeText = (value: string, maxLength: number): string =>
   value.replace(/[\u0000-\u001F\u007F]/g, '').trim().slice(0, maxLength);
+
+const sanitizeField = (value: string, maxLength: number): string =>
+  value.replace(/[\u0000-\u001F\u007F|]/g, '').trim().slice(0, maxLength);
+
+export const buildTransferQrPayload = (draft: TransferDraft): BuildTransferQrResult => {
+  const nrb = normalizeAccountNumber(draft.accountNumber);
+  if (!isValidNrb(nrb)) {
+    return { ok: false, error: 'Numer rachunku odbiorcy jest nieprawidłowy.' };
+  }
+
+  const name = sanitizeField(draft.recipientName, MAX_NAME_LENGTH);
+  if (!name) {
+    return { ok: false, error: 'Podaj nazwę odbiorcy.' };
+  }
+
+  let amountGrosze = '';
+  const rawAmount = draft.amount.trim().replace(/\s/g, '');
+  if (rawAmount) {
+    if (!/^\d{1,7}([.,]\d{1,2})?$/.test(rawAmount)) {
+      return { ok: false, error: 'Podaj poprawną kwotę (maks. 2 miejsca po przecinku).' };
+    }
+    const parsedAmount = Number(rawAmount.replace(',', '.'));
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return { ok: false, error: 'Kwota musi być większa od zera.' };
+    }
+    const grosze = Math.round(parsedAmount * 100);
+    if (grosze <= 0 || String(grosze).length > 9) {
+      return { ok: false, error: 'Kwota przekracza dopuszczalny zakres kodu QR.' };
+    }
+    amountGrosze = String(grosze);
+  }
+
+  const title = sanitizeField(draft.title, MAX_TITLE_LENGTH);
+  const payload = `|PL|${nrb}|${amountGrosze}|${name}|${title}|`;
+
+  if (payload.length > MAX_QR_LENGTH) {
+    return { ok: false, error: `Dane przekraczają limit ${MAX_QR_LENGTH} znaków kodu QR.` };
+  }
+
+  return { ok: true, payload };
+};
+
+export const buildQrMatrix = (payload: string): boolean[][] => {
+  const qr = qrcode(0, 'M');
+  qr.addData(payload, 'Byte');
+  qr.make();
+  const size = qr.getModuleCount();
+  const matrix: boolean[][] = [];
+  for (let row = 0; row < size; row++) {
+    const line: boolean[] = [];
+    for (let col = 0; col < size; col++) {
+      line.push(qr.isDark(row, col));
+    }
+    matrix.push(line);
+  }
+  return matrix;
+};
 
 export const parseTransferQr = (raw: string): TransferDraft | null => {
   if (!raw || raw.length > MAX_QR_LENGTH) return null;
