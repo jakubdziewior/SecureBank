@@ -1,4 +1,4 @@
-const { withAndroidManifest, withDangerousMod, AndroidConfig } = require('expo/config-plugins');
+const { withAndroidManifest, withDangerousMod, withInfoPlist, AndroidConfig } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,7 +13,10 @@ const path = require('path');
  *    Jawne odrzucenie certyfikatow instalowanych przez uzytkownika w systemie (np. Burp Suite CA,
  *    mitmproxy CA, Charles Proxy). Uniemozliwia to przechwycenie ruchu przez podstawiony certyfikat.
  * 4. <pin-set>:
- *    Przypinanie skrotow kluczy publicznych (SPKI SHA-256) dla backendu Supabase (*.supabase.co).
+ *    Przypinanie skrotow kluczy publicznych (SPKI SHA-256) dla backendu Supabase (*.supabase.co)
+ *    wraz z kluczami posrednimi i zapasowym root CA (WE1, GTS Root R4, GTS Root R1).
+ * 5. iOS ATS (NSPinnedDomains):
+ *    Wylaczenie NSAllowsArbitraryLoads oraz natywny pinning CA w Info.plist.
  */
 const NETWORK_SECURITY_CONFIG_XML = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
@@ -28,12 +31,14 @@ const NETWORK_SECURITY_CONFIG_XML = `<?xml version="1.0" encoding="utf-8"?>
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">supabase.co</domain>
         <pin-set expiration="2027-12-31">
-            <!-- Leaf SPKI Pin (*.supabase.co) -->
+            <!-- Leaf SPKI Pin (*.supabase.co, wazny do 2027-01-22) -->
             <pin digest="SHA-256">B9zUXavotYYIs217h2OZnCqCTp2vB/2pNC1zDijcIAo=</pin>
-            <!-- Intermediate SPKI Pin (Google Trust Services WE1) -->
+            <!-- Intermediate SPKI Pin (Google Trust Services WE1, wazny do 2029-02-20) -->
             <pin digest="SHA-256">kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=</pin>
-            <!-- Root CA SPKI Pin (Google Trust Services GTS Root R4) -->
+            <!-- Root CA SPKI Pin (Google Trust Services GTS Root R4, wazny do 2036-06-22) -->
             <pin digest="SHA-256">mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=</pin>
+            <!-- Backup Root CA SPKI Pin (Google Trust Services GTS Root R1, wazny do 2036-06-22) -->
+            <pin digest="SHA-256">hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=</pin>
         </pin-set>
         <trust-anchors>
             <certificates src="system" />
@@ -81,8 +86,27 @@ const withNetworkSecurityManifest = (config) => {
   });
 };
 
+const withIosAppTransportSecurity = (config) => {
+  return withInfoPlist(config, (modConfig) => {
+    modConfig.modResults.NSAppTransportSecurity = {
+      NSAllowsArbitraryLoads: false,
+      NSPinnedDomains: {
+        'supabase.co': {
+          NSIncludesSubdomains: true,
+          NSPinnedCAIdentities: [
+            { 'SPKI-SHA256-BASE64': 'kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4=' },
+            { 'SPKI-SHA256-BASE64': 'mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=' },
+            { 'SPKI-SHA256-BASE64': 'hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=' },
+          ],
+        },
+      },
+    };
+    return modConfig;
+  });
+};
+
 const withNetworkSecurityConfig = (config) => {
-  return withNetworkSecurityManifest(withNetworkSecurityXml(config));
+  return withIosAppTransportSecurity(withNetworkSecurityManifest(withNetworkSecurityXml(config)));
 };
 
 module.exports = withNetworkSecurityConfig;

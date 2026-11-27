@@ -11,7 +11,9 @@ const toAccess = (response: PermissionResponse): CameraAccess => {
 };
 
 export const logCameraAccess = (source: string, access: CameraAccess) => {
-  console.info(`${LOG_TAG} source=${source} status=${access}`);
+  if (__DEV__) {
+    console.info(`${LOG_TAG} source=${source} status=${access}`);
+  }
 };
 
 export const getCameraAccess = async (): Promise<CameraAccess> => {

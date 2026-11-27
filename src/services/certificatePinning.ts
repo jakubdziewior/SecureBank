@@ -33,7 +33,13 @@ export const AUTHORIZED_SPKI_PINS: readonly SpkiPin[] = [
     label: 'Root CA (GTS Root R4)',
     role: 'root',
     sha256Base64: 'mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c=',
-    subject: 'CN=GTS Root R4, O=Google Trust Services, C=US',
+    subject: 'CN=GTS Root R4, O=Google Trust Services LLC, C=US',
+  },
+  {
+    label: 'Backup Root CA (GTS Root R1)',
+    role: 'root',
+    sha256Base64: 'hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc=',
+    subject: 'CN=GTS Root R1, O=Google Trust Services LLC, C=US',
   },
 ] as const;
 
@@ -139,7 +145,22 @@ export const securePinnedFetch: typeof fetch = async (input, init) => {
     const response = await fetch(input, {
       ...init,
       headers,
+      redirect: 'manual',
     });
+
+    if (
+      response.type === 'opaqueredirect' ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      throw new SSLHandshakeException(
+        `SSLHandshakeException: Zablokowano przekierowanie HTTP ${response.status} dla ${urlStr} [MASVS-NETWORK-1].`
+      );
+    }
+
+    if (response.url) {
+      assertNetworkSecurityPolicy(response.url);
+    }
+
     return response;
   } catch (error: any) {
     if (isTlsOrMitmError(error)) {
@@ -237,7 +258,11 @@ export const getNetworkSecuritySummary = () => ({
   cleartextTrafficPermitted: false,
   trustedCertificates: 'system' as const,
   userCertificatesAllowed: false,
+  redirectsAllowed: false,
+  iosAtsPinning: true,
+  iosArbitraryLoadsAllowed: false,
   pinningAlgorithm: 'SPKI-SHA256' as const,
+  leafValidUntil: '2027-01-22',
   expirationDate: '2027-12-31',
   androidConfigFile: 'res/xml/network_security_config.xml',
   authorizedPins: AUTHORIZED_SPKI_PINS,

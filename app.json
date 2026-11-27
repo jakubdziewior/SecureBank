@@ -15,7 +15,26 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.securebank.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Aparat jest wymagany do skanowania kodów QR z danymi przelewu."
+        "NSCameraUsageDescription": "Aparat jest wymagany do skanowania kodów QR z danymi przelewu.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false,
+          "NSPinnedDomains": {
+            "supabase.co": {
+              "NSIncludesSubdomains": true,
+              "NSPinnedCAIdentities": [
+                {
+                  "SPKI-SHA256-BASE64": "kIdp6NNEd8wsugYyyIYFsi1ylMCED3hZbSR8ZFsa/A4="
+                },
+                {
+                  "SPKI-SHA256-BASE64": "mEflZT5enoR1FuXLgYYGqnVEoZvmf9c2bVBpiOjYQ0c="
+                },
+                {
+                  "SPKI-SHA256-BASE64": "hxqRlPTu1bMS/0DITB1SSu0vd4u/8l8TjPgfaAp63Gc="
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "android": {

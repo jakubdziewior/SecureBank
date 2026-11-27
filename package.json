@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test:sessions": "node scripts/session-check.mjs"
+    "test:sessions": "node scripts/session-check.mjs",
+    "test:network": "node scripts/network-audit.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~58.0.15",
